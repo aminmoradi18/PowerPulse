@@ -1,348 +1,499 @@
 import "./style.css";
+import QRCode from "qrcode";
+import { hexToBin } from "@bitauth/libauth";
+import {
+  type Net, type VaultParams, type VaultState, BLOCKS_PER_DAY, MINER_FEE, addressOfPubkey, broadcast, buildCancel,
+  buildFunding, buildTopUp, collect, explorerTx, normalizeAddress, satsToBch, vaultState, walletUtxos, binToHex,
+} from "./chain";
+import { wallet } from "./wallet";
+import { DEFAULT_PROVIDER, PLANS, PROJECT } from "./config";
 import { icon } from "./icons";
 
-const app = document.querySelector<HTMLDivElement>("#app");
+// ---------- small helpers ----------
+const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+function toast(msg: string, kind: "ok" | "err" | "info" = "info", ms = 6000) {
+  const t = document.createElement("div");
+  t.className = `toast ${kind}`;
+  t.innerHTML = msg;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+async function copy(text: string) {
+  try { await navigator.clipboard.writeText(text); toast("Copied", "ok", 1800); } catch { toast("Copy failed: " + esc(text), "err"); }
+}
+(window as any).__copy = copy;
 
-if (!app) {
-  throw new Error("App root element was not found");
+let net: Net = "chipnet";
+function setNet(n: Net) {
+  if (n === "mainnet" && !window.confirm("Mainnet uses real BCH. Continue only if you intend to use real funds.")) return;
+  net = n;
+  render();
 }
 
-interface DemoPlan {
-  id: number;
-  name: string;
-  service: string;
-  cadence: string;
-  amount: number;
+let bchUsd: number | null = null;
+fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin-cash&vs_currencies=usd")
+  .then((r) => r.json()).then((j) => { bchUsd = j?.["bitcoin-cash"]?.usd ?? null; }).catch(() => {});
+const usd = (sats: bigint) => (bchUsd ? `≈ $${((Number(sats) / 1e8) * bchUsd).toFixed(2)}` : "");
+
+// ---------- runtime settings (public/config.json, editable without touching code) ----------
+interface RuntimeConfig { repo?: string; slides: string; video: string; preBlazeRepo: string; preBlazeDemo: string; newDuringBlaze: string; demoVault: Partial<Record<Net, string>> }
+let cfg: RuntimeConfig = { slides: PROJECT.slides, video: PROJECT.video, preBlazeRepo: "", preBlazeDemo: "", newDuringBlaze: "", demoVault: {} };
+function demoVault(): VaultParams | undefined {
+  const link = cfg.demoVault?.[net];
+  if (!link) return undefined;
+  try { const v = decodeVault(link.includes("#/v/") ? link.split("#/v/")[1] : link); return v.net === net ? v : undefined; } catch { return undefined; }
 }
 
-const demoPlans: DemoPlan[] = [];
+// ---------- vault links ----------
+// A vault is fully described by its parameters, so the link itself is the vault's ID: anyone with it can watch.
+function encodeVault(p: VaultParams): string {
+  const o = { n: p.net, d: p.deviceId, l: p.label, a: p.providerAddress, k: p.payerPubkey, s: p.pledge.toString(), t: p.period };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function decodeVault(s: string): VaultParams {
+  const o = JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))));
+  return { net: o.n, deviceId: o.d, label: o.l, providerAddress: o.a, payerPubkey: o.k, pledge: BigInt(o.s), period: o.t };
+}
+function savedVaults(): string[] { try { return JSON.parse(localStorage.getItem("powerpulse-vaults") || "[]"); } catch { return []; } }
+function saveVault(code: string) { try { const v = savedVaults().filter((x) => x !== code); v.unshift(code); localStorage.setItem("powerpulse-vaults", JSON.stringify(v.slice(0, 20))); } catch {} }
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character]!);
+// ---------- shell ----------
+const app = $("#app");
+function shell(active: string, body: string) {
+  const chip = wallet.connected
+    ? `<span class="wallet-chip">${icon("wallet")} ${esc(wallet.name || "Wallet")}</span>`
+    : wallet.status === "reconnecting" ? `<span class="pill">Reconnecting wallet…</span>` : "";
+  app.innerHTML = `
+  <div class="banner" role="region" aria-label="BCH BLAZE 2026 entry">
+    <div class="wrap">
+      <strong>BCH BLAZE 2026 entry</strong>
+      ${cfg.slides ? `<a href="${esc(cfg.slides)}" target="_blank" rel="noopener">Presentation</a>` : `<span>Presentation: coming soon</span>`}
+      <a href="${esc(cfg.repo || PROJECT.repo)}" target="_blank" rel="noopener">Source code</a>
+      <span>Support with EMBER2026: <button class="copy-inline" onclick="__copy('${PROJECT.donation}')">copy address</button>
+      <span class="addr">${PROJECT.donation}</span></span>
+      ${cfg.preBlazeRepo || cfg.preBlazeDemo ? `<span>Built before BLAZE: ${cfg.preBlazeRepo ? `<a href="${esc(cfg.preBlazeRepo)}" target="_blank" rel="noopener">v1 code</a>` : ""} ${cfg.preBlazeDemo ? `· <a href="${esc(cfg.preBlazeDemo)}" target="_blank" rel="noopener">v1 demo</a>` : ""}${cfg.newDuringBlaze ? ` · ${/^https?:/.test(cfg.newDuringBlaze) ? `<a href="${esc(cfg.newDuringBlaze)}" target="_blank" rel="noopener">what is new during BLAZE</a>` : `New during BLAZE: ${esc(cfg.newDuringBlaze)}`}` : ""}</span>` : ""}
+    </div>
+  </div>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="#/">${icon("logo")}<span>${PROJECT.name}</span></a>
+    <nav class="links">
+      <a href="#/" class="${active === "home" ? "active" : ""}">How it works</a>
+      <a href="#/new" class="${active === "new" ? "active" : ""}">Start a plan</a>
+      <a href="#/mine" class="${active === "mine" ? "active" : ""}">My plans</a>
+      <a href="#/gateway" class="${active === "gateway" ? "active" : ""}">Village gateway</a>
+    </nav>
+    <div class="spacer"></div>
+    ${chip}
+    <div class="net" role="group" aria-label="Network">
+      <button data-net="mainnet" class="${net === "mainnet" ? "sel" : ""}">Mainnet</button>
+      <button data-net="chipnet" class="${net === "chipnet" ? "sel" : ""}">Chipnet</button>
+    </div>
+  </div></header>
+  <div class="network-notice ${net === "chipnet" ? "test-network" : "real-network"}">
+    ${net === "chipnet"
+      ? "Chipnet test network · tBCH is for testing only and has no real-world value."
+      : "Mainnet · transactions use real BCH and cannot be reversed."}
+  </div>
+  <main>${body}</main>
+  <footer><div class="wrap">
+    <span>${PROJECT.name}: pay-as-you-go solar on Bitcoin Cash, unlocked over LoRa radio.</span>
+    <span>Contract based on the CashScript "Mecenas" example. Wallet link: WizardConnect.</span>
+  </div></footer>`;
+  app.querySelectorAll<HTMLButtonElement>(".net button").forEach((b) => (b.onclick = () => setNet(b.dataset.net as Net)));
+}
 
-function header(activeRoute: string): string {
-  const links = [
-    ["/", "Home"],
-    ["/new", "Start a plan"],
-    ["/mine", "My plans"],
-    ["/gateway", "Village gateway"],
-  ];
-
+// ---------- device panel (shared by landing and vault page) ----------
+function deviceCard(id: string, title: string, subtitle: string, simulated: boolean) {
   return `
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="#/" aria-label="PowerPulse home">
-          <span class="brand-mark" aria-hidden="true">${icon("bolt")}</span>
-          <span>PowerPulse</span>
-        </a>
-        <nav class="main-nav" aria-label="Main navigation">
-          ${links.map(([href, label]) => `
-            <a href="#${href}"${activeRoute === href ? ' aria-current="page"' : ""}>${label}</a>
-          `).join("")}
-        </nav>
-        <a class="button button-small button-outline header-cta" href="#/new">Start a plan <span aria-hidden="true">↗</span></a>
-      </div>
-    </header>`;
+  <div class="card device" id="${id}">
+    ${simulated ? `<span class="sim-tag">Simulation</span>` : ""}
+    <div class="device-head">
+      <div><h3>${esc(title)}</h3><p class="sub">${esc(subtitle)}</p></div>
+      <span class="pill" data-k="pill">Checking…</span>
+    </div>
+    <div class="scene" data-k="scene" role="img" aria-label="Solar home and water pump">
+      <div class="sun"></div><div class="panel"></div>
+      <div class="house"><div class="roof"></div><div class="wall"></div><div class="win l"></div><div class="win r"></div></div>
+      <div class="radio"></div><div class="wave"></div>
+      <div class="pump"><div class="body"></div><div class="pipe"></div></div><div class="drops"></div>
+      <div class="ground"></div>
+    </div>
+    <div class="kv">
+      <div><b data-k="bal">–</b><span>In the vault</span></div>
+      <div><b data-k="left">–</b><span>Periods paid ahead</span></div>
+      <div><b data-k="next">–</b><span>Next payment</span></div>
+    </div>
+    <div class="frame" data-k="frame">LoRa frame: waiting for chain data…</div>
+  </div>`;
 }
 
-function footer(): string {
-  return `
-    <footer class="footer">
-      <div class="wrap footer-inner">
-        <a class="brand" href="#/" aria-label="PowerPulse home">
-          <span class="brand-mark" aria-hidden="true">${icon("bolt")}</span>
-          <span>PowerPulse</span>
-        </a>
-        <p>Solar energy, designed around people.</p>
-        <span class="prototype-note">Early product preview</span>
-      </div>
-    </footer>`;
+let frameCounter = Math.floor(Date.now() / 1000);
+function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
+  const on = s.active;
+  const pill = $("[data-k=pill]", root);
+  pill.className = `pill live ${on ? "on" : "off"}`;
+  pill.textContent = on ? "Power ON" : "Locked";
+  const scene = $("[data-k=scene]", root);
+  scene.classList.toggle("on", on);
+  scene.classList.remove("ping"); void scene.offsetWidth; scene.classList.add("ping");
+  $("[data-k=bal]", root).innerHTML = `${satsToBch(s.balance)} <small style="font-size:12px;color:var(--muted)">BCH</small>`;
+  $("[data-k=left]", root).textContent = String(s.periodsLeft);
+  $("[data-k=next]", root).textContent = !on ? "–" : s.canCollect ? "Due now" : s.ageBlocks === null ? "after 1st block" : `in ${s.blocksToNextCollect} block${s.blocksToNextCollect === 1 ? "" : "s"}`;
+  const body = `KL1|${p.deviceId}|${on ? 1 : 0}|${s.periodsLeft}|${s.tipHeight}|${++frameCounter}`;
+  $("[data-k=frame]", root).innerHTML = `LoRa frame the gateway sends: <b>${esc(body)}</b>|&lt;HMAC&gt; <br>Block ${s.tipHeight} · vault <a href="${explorerAddr(p.net, s.address)}" target="_blank" rel="noopener">${s.address.slice(0, 22)}…</a>`;
+}
+function explorerAddr(n: Net, a: string) { return n === "mainnet" ? `https://explorer.salemkode.com/address/${a}` : `https://chipnet.imaginary.cash/address/${a}`; }
+
+function simulateDevice(root: HTMLElement) {
+  let on = true, left = 6, tip = 0;
+  const tick = () => {
+    const fake: VaultState = { address: "simulation", balance: BigInt(left) * 3000n, utxoCount: 1, ageBlocks: 1, tipHeight: 930000 + tip++, periodsLeft: left, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
+    paintDevice(root, { net, deviceId: "ZA-014", label: "", providerAddress: "", payerPubkey: "", pledge: 2000n, period: 1 }, fake);
+    $("[data-k=frame]", root).innerHTML = $("[data-k=frame]", root).innerHTML.replace(/<br>.*/, "<br>Simulation: a payment every few seconds, then the money runs out.");
+    left = on ? left - 1 : 6; if (left < 0) { on = false; left = 0; } else if (!on) on = true;
+  };
+  tick();
+  return setInterval(tick, 2500);
 }
 
-function homePage(): string {
-  return `
-    <section class="hero wrap" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="eyebrow-icon" aria-hidden="true">✳</span> SOLAR ENERGY, ON YOUR TERMS</p>
-        <h1 id="hero-title">Keep the water<br /><span class="highlight">flowing.</span></h1>
-        <p class="hero-lead">
-          Help power a family home or a farm's water pump from anywhere. PowerPulse is designed
-          around flexible payments and dependable energy for communities beyond the grid.
-        </p>
-        <div class="hero-actions">
-          <a class="button button-sun" href="#/new">Start a power plan <span aria-hidden="true">→</span></a>
-          <a class="button button-quiet" href="#how"><span class="play-icon" aria-hidden="true">▷</span> See how it works</a>
-        </div>
-        <div class="trust-list" aria-label="PowerPulse principles">
-          <span><i aria-hidden="true">✓</i> Flexible, period-by-period support</span>
-          <span><i aria-hidden="true">✓</i> Designed for remote communities</span>
-          <span><i aria-hidden="true">✓</i> People stay in control</span>
-        </div>
-      </div>
+// ---------- pages ----------
+let timers: number[] = [];
+function clearTimers() { timers.forEach((t) => clearInterval(t)); timers = []; }
 
-      <div class="device-card" aria-label="Illustration preview of a solar-powered water pump">
-        <div class="device-card-header">
-          <div>
-            <p class="card-overline">POWERPULSE · FIELD PREVIEW</p>
-            <h2>Sunrise Solar Co-op</h2>
-          </div>
-          <span class="status-pill"><i></i> SIMULATION</span>
-        </div>
-        <div class="landscape" role="img" aria-label="Solar panels, a home and a water pump in a sunny landscape">
-          <div class="sky-glow"></div><div class="sun"></div>
-          <div class="cloud cloud-one"></div><div class="cloud cloud-two"></div>
-          <div class="distant-hill"></div><div class="near-hill"></div><div class="field-ground"></div>
-          <div class="solar-array"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-          <div class="home"><div class="roof"></div><div class="walls"><i></i><b></b></div></div>
-          <div class="radio-tower"><i></i><span class="radio-wave wave-a"></span><span class="radio-wave wave-b"></span></div>
-          <div class="water-pump"><i></i><b></b><span></span></div>
-          <div class="water-drops"><i></i><i></i><i></i></div>
-        </div>
-        <div class="device-stats">
-          <div><span>Device</span><strong>Village water pump</strong></div>
-          <div><span>Energy</span><strong><i class="live-dot"></i> Solar powered</strong></div>
-          <div><span>Connectivity</span><strong>LoRa radio</strong></div>
-        </div>
-        <p class="demo-caption">Illustrative interface · Device controls are not connected</p>
-      </div>
-    </section>
-
-    <section class="principle-strip" id="impact">
-      <div class="wrap principle-inner">
-        <p class="strip-label">ENERGY SHOULD WORK FOR PEOPLE</p>
-        <p class="strip-copy">A family's power or a village pump should not depend on a strong mobile signal—or a company holding all the keys.</p>
-        <span class="strip-symbol" aria-hidden="true">✳</span>
-      </div>
-    </section>
-
-    <section class="section wrap" id="how" aria-labelledby="how-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">A CLEARER WAY TO POWER ESSENTIALS</p>
-          <h2 id="how-title">How PowerPulse works</h2>
-        </div>
-        <p class="section-intro">A simple idea connecting people who need energy, the providers who deliver it, and devices in places the grid doesn't reach.</p>
-      </div>
-      <div class="steps-grid">
-        <article class="step-card">
-          <span class="step-number">01</span>
-          <div class="step-icon" aria-hidden="true">${icon("home")}</div>
-          <h3>Choose what needs power</h3>
-          <p>A family solar kit, a farm's water pump, or another essential community service.</p>
-        </article>
-        <article class="step-card">
-          <span class="step-number">02</span>
-          <div class="step-icon" aria-hidden="true">${icon("card")}</div>
-          <h3>Support one period at a time</h3>
-          <p>Make energy access more manageable with payments organized around clear periods.</p>
-        </article>
-        <article class="step-card">
-          <span class="step-number">03</span>
-          <div class="step-icon" aria-hidden="true">${icon("radio")}</div>
-          <h3>Keep energy within reach</h3>
-          <p>Radio connectivity can carry device updates to remote places with limited mobile coverage.</p>
-        </article>
-      </div>
-      <div class="home-next-step">
-        <span>Ready to explore a plan?</span>
-        <a class="inline-link" href="#/new">Start with a device <span aria-hidden="true">→</span></a>
-      </div>
-    </section>
-
-    <section class="hardware-section" id="hardware">
-      <div class="wrap hardware-inner">
-        <div>
-          <p class="eyebrow">BUILT FOR THE LAST MILE</p>
-          <h2>Power, even beyond the signal.</h2>
-          <p class="hardware-copy">PowerPulse is designed to pair a connected village gateway with a low-power radio device in the field—bringing essential energy to places where cellular coverage can be unreliable.</p>
-          <a class="inline-link" href="#/gateway">Explore the village gateway <span aria-hidden="true">→</span></a>
-        </div>
-        <div class="radio-visual" aria-hidden="true">
-          <div class="radio-sun"></div><div class="signal signal-one"></div>
-          <div class="signal signal-two"></div><div class="signal signal-three"></div>
-          <div class="radio-node node-home"><span class="node-icon">⌂</span><small>HOME</small></div>
-          <div class="radio-node node-gateway"><span class="node-icon">⌁</span><small>GATEWAY</small></div>
-          <div class="radio-node node-pump"><span class="node-icon">◉</span><small>WATER</small></div>
-          <div class="signal-line"></div><span class="signal-label">LONG-RANGE RADIO</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="closing-cta wrap">
-      <div class="cta-mark" aria-hidden="true">✳</div>
+function pageHome() {
+  const demo = demoVault();
+  shell("home", `
+  <div class="wrap">
+    <section class="hero">
       <div>
-        <p class="eyebrow">POWER FOR WHAT MATTERS</p>
-        <h2>Make room for more possibility.</h2>
-        <p>Explore how flexible solar energy could support your home or community.</p>
-      </div>
-      <a class="button button-sun" href="#/new">Explore a plan <span aria-hidden="true">↗</span></a>
-    </section>`;
-}
-
-function startPlanPage(): string {
-  return `
-    <section class="page-section wrap" aria-labelledby="page-title">
-      <div class="page-heading">
-        <a class="back-link" href="#/">← Back to home</a>
-        <p class="eyebrow">A FEW DETAILS TO GET STARTED</p>
-        <h1 id="page-title">Set up a power plan</h1>
-        <p class="page-lead">Choose the device and support schedule you want to explore. This preview does not connect a wallet or make a payment.</p>
-      </div>
-      <div class="form-layout">
-        <form class="plan-form card-panel" id="plan-form">
-          <label class="field-label" for="plan-name">Plan name <span>Give this plan a name you recognize</span></label>
-          <input id="plan-name" name="name" maxlength="60" placeholder="e.g. North field water pump" required />
-
-          <label class="field-label" for="plan-service">What needs power?</label>
-          <select id="plan-service" name="service">
-            <option>Village water pump</option>
-            <option>Family solar home kit</option>
-            <option>Community service</option>
-          </select>
-
-          <fieldset class="field-group">
-            <legend class="field-label">Support schedule <span>Choose a preview schedule</span></legend>
-            <div class="schedule-options">
-              <label class="schedule-option">
-                <input type="radio" name="cadence" value="Daily" checked />
-                <span><strong>Daily</strong><small>One period per day</small></span>
-              </label>
-              <label class="schedule-option">
-                <input type="radio" name="cadence" value="Monthly" />
-                <span><strong>Monthly</strong><small>One period per month</small></span>
-              </label>
-            </div>
-          </fieldset>
-
-          <label class="field-label" for="plan-amount">Indicative amount <span>Preview only · no funds are sent</span></label>
-          <div class="amount-field">
-            <input id="plan-amount" name="amount" type="number" min="1" max="1000000" step="1" value="3000" required />
-            <span>sat / period</span>
-          </div>
-
-          <div class="prototype-disclaimer">${icon("info")} Wallet connection and on-chain payment will be added later.</div>
-          <button class="button button-sun submit-button" type="submit">Create preview plan <span aria-hidden="true">→</span></button>
-        </form>
-
-        <aside class="plan-aside">
-          <div class="aside-icon">${icon("sun")}</div>
-          <h2>Your energy plan</h2>
-          <p>PowerPulse plans are designed to support essential solar energy one period at a time.</p>
-          <ul>
-            <li>${icon("check")} You choose the device</li>
-            <li>${icon("check")} You choose the schedule</li>
-            <li>${icon("check")} This step is only a local preview</li>
-          </ul>
-          <div class="aside-footnote">No wallet is connected. Nothing is signed, broadcast, or charged.</div>
-        </aside>
-      </div>
-    </section>`;
-}
-
-function myPlansPage(): string {
-  const plans = demoPlans.length
-    ? `<div class="plan-list">${demoPlans.map((plan) => `
-        <article class="saved-plan card-panel">
-          <div class="saved-plan-icon">${icon("bolt")}</div>
-          <div class="saved-plan-copy">
-            <span class="status-pill preview-status">LOCAL PREVIEW</span>
-            <h2>${escapeHtml(plan.name)}</h2>
-            <p>${escapeHtml(plan.service)} · ${escapeHtml(plan.cadence)} schedule</p>
-          </div>
-          <div class="saved-plan-amount"><strong>${plan.amount.toLocaleString("en-US")}</strong><span>sat / period</span></div>
-        </article>
-      `).join("")}</div>`
-    : `<div class="empty-state card-panel">
-        <div class="empty-icon">${icon("sun")}</div>
-        <h2>No plans in this preview yet</h2>
-        <p>Create a sample plan to see how it will appear here. It will only stay in this browser session.</p>
-        <a class="button button-sun" href="#/new">Create a preview plan <span aria-hidden="true">→</span></a>
-      </div>`;
-
-  return `
-    <section class="page-section wrap" aria-labelledby="page-title">
-      <div class="page-heading">
-        <p class="eyebrow">YOUR POWERPULSE DASHBOARD</p>
-        <h1 id="page-title">My plans</h1>
-        <p class="page-lead">Review plans created during this preview session.</p>
-      </div>
-      <div class="preview-banner">${icon("info")} Preview only. Plans here are temporary and are not linked to a wallet or blockchain.</div>
-      ${plans}
-      <a class="button button-outline add-plan-button" href="#/new">Add another plan <span aria-hidden="true">+</span></a>
-    </section>`;
-}
-
-function gatewayPage(): string {
-  return `
-    <section class="page-section wrap" aria-labelledby="page-title">
-      <div class="page-heading">
-        <p class="eyebrow">REMOTE ENERGY, CONNECTED</p>
-        <h1 id="page-title">Village gateway</h1>
-        <p class="page-lead">A gateway can connect on-chain plan status to devices in places where mobile coverage is limited.</p>
-      </div>
-      <div class="gateway-layout">
-        <div class="gateway-card card-panel">
-          <div class="gateway-card-heading">
-            <div class="aside-icon">${icon("radio")}</div>
-            <span class="status-pill preview-status">CONCEPT</span>
-          </div>
-          <h2>How the gateway fits in</h2>
-          <p>The gateway is the bridge between an internet-connected location and remote solar devices.</p>
-          <div class="gateway-flow">
-            <div><span>${icon("chain")}</span><strong>Plan status</strong><small>Read from network</small></div>
-            <i aria-hidden="true">→</i>
-            <div><span>${icon("radio")}</span><strong>Gateway</strong><small>Relays a radio message</small></div>
-            <i aria-hidden="true">→</i>
-            <div><span>${icon("pump")}</span><strong>Field device</strong><small>Receives an update</small></div>
-          </div>
+        <span class="eyebrow">${icon("bolt")} Pay-as-you-go solar on Bitcoin Cash</span>
+        <h1>Keep the water <span class="hl">flowing.</span></h1>
+        <p class="lead">Pay a farm's solar water pump, or a family's solar power, from anywhere. The money waits in a vault that <b>you</b> control, the provider can take only one period at a time, and you can cancel and get the rest back. Farms sit far from town, often in valleys with weak or no mobile signal: a radio carries the unlock.</p>
+        <div class="cta">
+          <a class="btn btn-sun" href="#/new">${icon("plus")} Start a plan</a>
+          <a class="btn btn-ghost" href="#how">${icon("play")} See how it works</a>
         </div>
-        <aside class="gateway-note card-panel">
-          <div class="aside-icon">${icon("info")}</div>
-          <h2>Not connected yet</h2>
-          <p>This screen is a product preview. It does not read the blockchain, send radio messages, or control hardware.</p>
-          <a class="inline-link" href="#/new">Explore a sample plan <span aria-hidden="true">→</span></a>
-        </aside>
+        <div class="trust">
+          <span>${icon("check")} Money stays on chain, not in a company account</span>
+          <span>${icon("check")} Cancel any time, refund in one tap</span>
+          <span>${icon("check")} Works in valleys with no mobile signal</span>
+        </div>
       </div>
-    </section>`;
+      <div>
+        ${deviceCard("demo-device", demo ? demo.label : "Baba's solar water pump · ZA-014", demo ? `Live ${net} vault · device ${demo.deviceId}` : "How a device reacts to its vault", !demo)}
+        ${demo ? `<div class="actions">
+          <button class="btn btn-ghost btn-sm" id="demo-collect">${icon("coins")} Run this period's payment (anyone can)</button>
+          <a class="btn btn-ghost btn-sm" href="#/v/${encodeVault(demo)}">${icon("eye")} Open vault</a></div>
+          <p class="note">The payment needs no wallet and no key: the contract itself checks the amount, the receiver and the date. The fee comes out of the vault.</p>` : ""}
+      </div>
+    </section>
+
+    <section class="section" id="how">
+      <h2>How it works</h2>
+      <p class="intro">Three parties, one rule enforced by Bitcoin Cash script: the provider gets paid one period at a time, and only the payer can stop it.</p>
+      <div class="grid3">
+        <div class="card"><div class="step-n">1</div><h3>The payer funds a vault</h3><p class="sub">A son working in Dubai connects his wallet and locks, say, six months of his father's solar pump plan into a vault contract on Bitcoin Cash. A farmer can fund it himself the same way.</p></div>
+        <div class="card"><div class="step-n">2</div><h3>One collection per period</h3><p class="sub">After each period, anyone can trigger a collection. The provider receives one period's price while enough remains; the final collection also sweeps the remaining vault balance after its fee.</p></div>
+        <div class="card"><div class="step-n">3</div><h3>Radio unlocks the device</h3><p class="sub">A gateway in town reads the vault and sends a signed message over LoRa radio, several kilometres, to the pump on the farm or the kit in the village. Paid ahead: power on. Cancelled or empty: locked.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Why this matters</h2>
+      <p class="intro">Pay-as-you-go solar already powers millions of homes. But the money and the switch sit with the company, and the unlock code needs a phone signal.</p>
+      <div class="grid3">
+        <div class="card"><div class="icon-tile">${icon("people")}</div><div class="stat">666M <small>people</small></div><p class="sub">still had no electricity in 2023, about 85% of them in sub-Saharan Africa.</p><p class="src">World Bank, <a href="https://www.worldbank.org/en/topic/energy/publication/tracking-sdg-7-the-energy-progress-report-2025" target="_blank" rel="noopener">Tracking SDG7 2025</a></p></div>
+        <div class="card"><div class="icon-tile">${icon("send")}</div><div class="stat">8.78% <small>fee</small></div><p class="sub">average cost to send $200 to sub-Saharan Africa. Families abroad already pay their relatives' bills this way.</p><p class="src">World Bank, <a href="https://remittanceprices.worldbank.org/" target="_blank" rel="noopener">Remittance Prices Q1 2025</a></p></div>
+        <div class="card"><div class="icon-tile">${icon("alert")}</div><div class="stat">2025 <small>failures</small></div><p class="sub">A major PAYG solar company went into administration and another was liquidated. Customers' prepaid money sits with the company.</p><p class="src"><a href="https://www.pkf-l.com/insights/pkf-appointed-administrators-of-bboxx-limited/" target="_blank" rel="noopener">PKF on Bboxx</a> · <a href="https://launchbaseafrica.com/2025/05/27/shell-and-usaid-backed-solarnow-forced-into-liquidation-after-20m-funding/" target="_blank" rel="noopener">SolarNow</a></p></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="table-wrap"><table class="compare">
+          <thead><tr><th></th><th>Typical PAYG today</th><th>${PROJECT.name}</th></tr></thead>
+          <tbody>
+            <tr><td>Where prepaid money waits</td><td>Company account</td><td>Vault on Bitcoin Cash, refundable by the payer</td></tr>
+            <tr><td>How much the provider can take</td><td>Whatever the company bills</td><td>One period's price per collection; the final collection sweeps the remainder</td></tr>
+            <tr><td>Paying from abroad</td><td>Remittance + mobile money fees</td><td>A Bitcoin Cash transaction, under one cent</td></tr>
+            <tr><td>Unlock</td><td>SMS code or GSM modem</td><td>Signed LoRa radio frame, no SIM, no internet in the village</td></tr>
+            <tr><td>Anyone can check</td><td>No</td><td>Yes, the vault and every payment are public</td></tr>
+          </tbody></table></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Real hardware, not a mock-up</h2>
+      <p class="intro">Two ESP32-S3 boards with 433 MHz LoRa radios: one is the gateway next to the internet, one is the device in the "village". Frames carry an HMAC and a counter, so a recorded frame cannot be replayed and a fake one is rejected.</p>
+      <div class="grid2">
+        <div class="card"><div class="icon-tile">${icon("radio")}</div><h3>Village gateway</h3><p class="sub">Reads every vault from the chain, triggers due payments for the provider, and broadcasts the state over LoRa. <a href="#/gateway">How to run it</a></p></div>
+        <div class="card"><div class="icon-tile">${icon("chip")}</div><h3>Device controller</h3><p class="sub">Checks the HMAC and the counter, then switches the lamp or pump. If the radio is silent it keeps its last state: a radio gap never cuts the power.</p>${cfg.video ? `<p><a href="${esc(cfg.video)}" target="_blank" rel="noopener">Watch the hardware demo</a></p>` : ""}</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="card" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+        <div><h3 style="font-size:22px">Try it in two minutes</h3><p class="sub">Use Cashonize (desktop, web or Android). Switch to Chipnet above for free test coins.</p></div>
+        <a class="btn btn-sun" href="#/new">${icon("plus")} Start a plan</a>
+      </div>
+    </section>
+  </div>`);
+  const root = $("#demo-device");
+  if (demo) {
+    const refresh = () => vaultState(demo).then((s) => paintDevice(root, demo, s)).catch((e) => toast("Chain read failed: " + esc(e.message), "err"));
+    refresh(); timers.push(setInterval(refresh, 20000) as unknown as number);
+    $("#demo-collect").onclick = () => runCollect(demo, refresh);
+  } else {
+    timers.push(simulateDevice(root) as unknown as number);
+  }
 }
 
-function render(): void {
-  const route = location.hash.startsWith("#/")
-    ? location.hash.slice(1).split("?")[0]
-    : "/";
-
-  const page = route === "/new"
-    ? startPlanPage()
-    : route === "/mine"
-      ? myPlansPage()
-      : route === "/gateway"
-        ? gatewayPage()
-        : homePage();
-
-  app.innerHTML = `${header(route)}<main>${page}</main>${footer()}`;
-
-  const form = document.querySelector<HTMLFormElement>("#plan-form");
-  form?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!form.reportValidity()) return;
-
-    const formData = new FormData(form);
-    demoPlans.unshift({
-      id: Date.now(),
-      name: String(formData.get("name") ?? "").trim(),
-      service: String(formData.get("service") ?? ""),
-      cadence: String(formData.get("cadence") ?? "Daily"),
-      amount: Number(formData.get("amount")),
-    });
-    location.hash = "/mine";
-  });
+async function runCollect(p: VaultParams, after: () => void) {
+  try {
+    const s = await vaultState(p);
+    if (!s.active) return toast("This vault is empty or cancelled: nothing to pay.", "info");
+    if (!s.canCollect) return toast(s.ageBlocks === null ? "Wait for the vault's last transaction to be mined (about 10 minutes)." : `Not due yet: ${s.blocksToNextCollect} more block(s). The contract would reject it.`, "info");
+    const payment = s.nextPayment ?? p.pledge;
+    const finalPayment = payment > p.pledge;
+    const confirmed = window.confirm(
+      `Send the due payment on ${p.net}?\n\nProvider: ${p.providerAddress}\nPayment: ${satsToBch(payment)} BCH\nNetwork fee: ${satsToBch(MINER_FEE)} BCH${finalPayment ? "\nThis is the final payout from this vault output." : ""}${p.net === "mainnet" ? "\n\nThis uses real BCH." : "\n\nThis uses test BCH only."}`,
+    );
+    if (!confirmed) return;
+    toast("Sending this period's payment…");
+    const txid = await collect(p);
+    toast(`Paid ${satsToBch(payment)} BCH to the provider. <a href="${explorerTx(p.net, txid)}" target="_blank" rel="noopener">View transaction</a>`, "ok", 12000);
+    setTimeout(after, 1500);
+  } catch (e: any) { toast("Payment failed: " + esc(e.message || String(e)), "err", 10000); }
 }
 
-window.addEventListener("hashchange", render);
-render();
+function connectBlock() {
+  if (wallet.connected) {
+    const pk = wallet.pubkey("receive", 0);
+    return `<div class="card"><h3>${icon("wallet")} Wallet connected</h3><p class="sub">${esc(wallet.name || "")} · payer address <span class="mono">${pk ? esc(addressOfPubkey(pk, net)) : "?"}</span></p>
+      <div class="actions"><button class="btn btn-ghost btn-sm" id="w-disc">Disconnect</button></div></div>`;
+  }
+  return `<div class="card"><h3>1. Connect your wallet</h3>
+    <p class="sub">Open <b>Cashonize</b> (HD wallet) → <b>Connect</b>, then scan the code or paste the link. Make sure the wallet is on <b>${net}</b>.</p>
+    <div id="w-pair" style="margin-top:14px">${wallet.status === "waiting" ? "" : `<button class="btn btn-sun" id="w-start">${icon("link")} Connect with WizardConnect</button>`}</div></div>`;
+}
+async function paintPairing() {
+  const box = $("#w-pair"); if (!box || wallet.status !== "waiting") return;
+  const svg = await QRCode.toString(wallet.qrUri, { type: "svg", margin: 0 });
+  // The page may have re-rendered while the QR code was being drawn.
+  if (!box.isConnected || wallet.status !== "waiting") return;
+  box.innerHTML = `<div class="connect"><div class="qr">${svg}</div><div>
+    <p class="sub" style="margin-bottom:8px">Waiting for the wallet…</p>
+    <div class="uri">${esc(wallet.uri)}</div>
+    <div class="actions"><button class="btn btn-ghost btn-sm" id="w-copy">${icon("copy")} Copy link</button><button class="btn btn-ghost btn-sm" id="w-cancel">Cancel</button></div></div></div>`;
+  $("#w-copy").onclick = () => copy(wallet.uri);
+  $("#w-cancel").onclick = async () => {
+    try { await wallet.disconnect(); render(); }
+    catch (e) { toast("Wallet disconnect failed: " + esc(e instanceof Error ? e.message : String(e)), "err", 10000); }
+  };
+}
+function bindConnect() {
+  const s = $("#w-start");
+  if (s) s.onclick = async () => {
+    try { await wallet.connect(); }
+    catch (e) { toast("Wallet connection failed: " + esc(e instanceof Error ? e.message : String(e)), "err", 10000); }
+  };
+  const d = $("#w-disc");
+  if (d) d.onclick = async () => {
+    try { await wallet.disconnect(); render(); }
+    catch (e) { toast("Wallet disconnect failed: " + esc(e instanceof Error ? e.message : String(e)), "err", 10000); }
+  };
+  paintPairing();
+}
+
+let planId: string = "demo";
+function pageNew() {
+  const plan = PLANS.find((x) => x.id === planId)!;
+  shell("new", `<div class="wrap section"><h2>Start a plan</h2><p class="intro">Lock a few periods of a solar plan into a vault. You can cancel any time and get back everything not yet paid.</p>
+  <div class="grid2" style="align-items:start">
+    <div class="form">${connectBlock()}
+      <div class="card form"><h3>2. Choose the device and plan</h3>
+        <label class="f">Device ID <span class="hint">Printed on the solar kit or pump controller</span><input id="f-dev" value="ZA-014" maxlength="16"></label>
+        <label class="f">Name <span class="hint">So you recognise it later</span><input id="f-label" value="Baba's solar water pump" maxlength="40"></label>
+        <div class="f"><span style="font-weight:600;font-size:14px">Plan</span><div class="plans">
+          ${PLANS.map((x) => `<button class="plan ${x.id === planId ? "sel" : ""}" data-plan="${x.id}"><b>${x.name}</b><span>${x.detail}</span></button>`).join("")}
+        </div></div>
+        <label class="f">Price per period (sats) <input id="f-price" type="number" min="1000" step="500" value="${plan.pledgeSats}"></label>
+        <label class="f">Periods to pay ahead <input id="f-n" type="number" min="1" max="60" value="1"></label>
+        <label class="f">Provider's address <span class="hint">Where each period's payment goes (demo: Sunrise Solar Co-op)</span><input id="f-prov" value="${DEFAULT_PROVIDER[net]}"></label>
+      </div>
+    </div>
+    <div class="card form" style="position:sticky;top:84px"><h3>3. Fund the vault</h3>
+      <div class="summary" id="f-sum"></div>
+      <button class="btn btn-sun" id="f-go" ${wallet.connected ? "" : "disabled"}>${icon("lock")} Fund vault with my wallet</button>
+      <p class="note">Your wallet shows the transaction before you sign. The final collection may pay the remaining vault balance to the provider after the fee. The vault address is computed from the plan, so anyone can check it.</p>
+    </div>
+  </div></div>`);
+  bindConnect();
+  const sum = () => {
+    const price = BigInt(Math.max(1000, Number(($("#f-price") as HTMLInputElement).value) || 0));
+    const n = BigInt(Math.max(1, Math.min(60, Number(($("#f-n") as HTMLInputElement).value) || 1)));
+    const total = (price + MINER_FEE) * n + 1000n;
+    const days = (plan.period * Number(n)) / BLOCKS_PER_DAY;
+    $("#f-sum").innerHTML = `<div><span>Plan</span><span>${plan.name}, ${plan.detail}</span></div>
+      <div><span>Per period</span><span>${satsToBch(price)} BCH ${usd(price)}</span></div>
+      <div><span>Network</span><span>${net === "chipnet" ? "Chipnet · test BCH only" : "Mainnet · real BCH"}</span></div>
+      <div><span>Provider</span><span class="mono">${esc(($("#f-prov") as HTMLInputElement).value.trim())}</span></div>
+      <div><span>Network fee per payment</span><span>${satsToBch(MINER_FEE)} BCH (from the vault)</span></div>
+      <div><span>Covers</span><span>${n} periods ≈ ${days < 1 ? Math.round(days * 24 * 60) + " min" : days.toFixed(1) + " days"}</span></div>
+      <div style="font-weight:700"><span style="color:var(--text)">Total locked</span><span>${satsToBch(total)} BCH ${usd(total)}</span></div>`;
+    return { price, n, total };
+  };
+  sum();
+  app.querySelectorAll<HTMLInputElement>("#f-price,#f-n").forEach((i) => (i.oninput = sum));
+  app.querySelectorAll<HTMLButtonElement>(".plan").forEach((b) => (b.onclick = () => { planId = b.dataset.plan!; pageNew(); }));
+  $("#f-go").onclick = async () => {
+    const btn = $<HTMLButtonElement>("#f-go");
+    try {
+      const pk = wallet.pubkey("receive", 0);
+      if (!pk) throw new Error("Wallet is not connected");
+      const { price, total } = sum();
+      const deviceId = ($("#f-dev") as HTMLInputElement).value.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16);
+      if (!deviceId) throw new Error("Enter a device ID");
+      const providerAddress = normalizeAddress(($("#f-prov") as HTMLInputElement).value.trim(), net);
+      const payerAddress = addressOfPubkey(pk, net);
+      if (providerAddress.toLowerCase() === payerAddress.toLowerCase()
+        && !window.confirm(`The provider address is your own wallet address:\n${providerAddress}\n\nPayments will return to you, but each on-chain payment still costs a network fee. Continue with this self-test?`)) return;
+      const p: VaultParams = { net, deviceId, label: ($("#f-label") as HTMLInputElement).value.trim() || deviceId,
+        providerAddress, payerPubkey: binToHex(pk), pledge: price, period: plan.period };
+      btn.disabled = true; btn.textContent = "Finding coins in your wallet…";
+      // Same settings = same vault address. Do not add a second coin to it: send the payer to "Add more periods".
+      const existing = await vaultState(p);
+      if (existing.balance > 0n) {
+        location.hash = `#/v/${encodeVault(p)}`;
+        toast("A vault with these settings already exists. Use “Add more periods” to top it up.", "info", 10000);
+        return;
+      }
+      const keys: { path: "receive" | "change"; index: number; pubkey: Uint8Array }[] = [];
+      for (const path of ["receive", "change"] as const) for (let i = 0; i < 10; i++) { const k = wallet.pubkey(path, i); if (k) keys.push({ path, index: i, pubkey: k }); }
+      const coins = await walletUtxos(net, keys);
+      const changeAddr = addressOfPubkey(wallet.pubkey("change", 0) || pk, net);
+      const { wc, inputPaths } = buildFunding(p, coins, total, changeAddr);
+      btn.textContent = "Confirm in your wallet…";
+      const raw = await wallet.sign(wc, inputPaths);
+      btn.textContent = "Broadcasting…";
+      const txid = await broadcast(net, raw);
+      const code = encodeVault(p); saveVault(code);
+      toast(`Vault funded. <a href="${explorerTx(net, txid)}" target="_blank" rel="noopener">View transaction</a>`, "ok", 12000);
+      location.hash = `#/v/${code}`;
+    } catch (e: any) {
+      toast("Could not fund: " + esc(e.message || String(e)), "err", 10000);
+      btn.disabled = !wallet.connected; btn.innerHTML = `${icon("lock")} Fund vault with my wallet`;
+    }
+  };
+}
+
+function pageVault(code: string) {
+  let p: VaultParams;
+  try { p = decodeVault(code); } catch { shell("", `<div class="wrap section"><div class="empty">This vault link is broken.</div></div>`); return; }
+  if (p.net !== net) { net = p.net; }
+  saveVault(code);
+  const plan = PLANS.find((x) => x.period === p.period);
+  shell("mine", `<div class="wrap section"><h2>${esc(p.label)}</h2><p class="intro">Device <b>${esc(p.deviceId)}</b> · ${p.net} · ${satsToBch(p.pledge)} BCH ${plan ? plan.detail : `every ${p.period} blocks`}</p>
+  <div class="grid2" style="align-items:start">
+    ${deviceCard("vault-device", "Device status", "Read live from the chain every 20 s", false)}
+    <div class="form">
+      <div class="card"><h3>Pay this period</h3><p class="sub">Anyone can send the due payment (normally the village gateway does it). The contract checks the amount, the receiver and the timing.</p>
+        <div class="actions"><button class="btn btn-ghost" id="v-collect">${icon("coins")} Run due payment</button></div></div>
+      <div class="card"><h3>Add more periods</h3><p class="sub">The payer can top up the same vault: no new link, the device stays on. Old and new money become one vault coin, so one collection is allowed per period; the final collection sweeps the remainder.</p>
+        <div id="v-topup-box" style="margin-top:12px"></div></div>
+      <div class="card"><h3>Cancel and refund</h3><p class="sub">Only the payer's wallet can do this. Everything left in the vault comes back, and the device locks at the next radio update.</p>
+        <div id="v-cancel-box" style="margin-top:12px"></div></div>
+      <div class="card"><h3>Share</h3><p class="sub">The link describes the vault fully. Send it to the family or the provider so they can watch it.</p>
+        <div class="actions"><button class="btn btn-ghost btn-sm" id="v-share">${icon("copy")} Copy vault link</button></div></div>
+    </div>
+  </div></div>`);
+  const root = $("#vault-device");
+  const refresh = () => vaultState(p).then((s) => paintDevice(root, p, s)).catch((e) => toast("Chain read failed: " + esc(e.message), "err"));
+  refresh(); timers.push(setInterval(refresh, 20000) as unknown as number);
+  $("#v-collect").onclick = () => runCollect(p, refresh);
+  $("#v-share").onclick = () => copy(location.href);
+  const topBox = $("#v-topup-box");
+  const box = $("#v-cancel-box");
+  const isPayer = wallet.connected && binToHex(wallet.pubkey("receive", 0) || new Uint8Array()) === p.payerPubkey;
+  if (!wallet.connected) {
+    box.innerHTML = `<a class="btn btn-ghost" href="#/new">${icon("link")} Connect the payer's wallet first</a>`;
+    topBox.innerHTML = box.innerHTML;
+  } else if (!isPayer) {
+    box.innerHTML = `<p class="note">The connected wallet is not the payer of this vault.</p>`;
+    topBox.innerHTML = box.innerHTML;
+  } else {
+    topBox.innerHTML = `<label class="f">Periods to add <input id="v-topup-n" type="number" min="1" max="60" value="3"></label>
+      <div class="actions"><button class="btn btn-sun" id="v-topup">${icon("plus")} Add with my wallet</button></div>`;
+    $("#v-topup").onclick = async () => {
+      const b = $<HTMLButtonElement>("#v-topup");
+      try {
+        const n = Math.max(1, Math.min(60, Number(($("#v-topup-n") as HTMLInputElement).value) || 1));
+        const amount = BigInt(n) * (p.pledge + MINER_FEE);
+        b.disabled = true; b.textContent = "Finding coins in your wallet…";
+        const keys: { path: "receive" | "change"; index: number; pubkey: Uint8Array }[] = [];
+        for (const path of ["receive", "change"] as const) for (let i = 0; i < 10; i++) { const k = wallet.pubkey(path, i); if (k) keys.push({ path, index: i, pubkey: k }); }
+        const coins = await walletUtxos(p.net, keys);
+        const changeAddr = addressOfPubkey(wallet.pubkey("change", 0) || wallet.pubkey("receive", 0)!, p.net);
+        const { wc, inputPaths, newTotal } = await buildTopUp(p, coins, amount, changeAddr, 0);
+        b.textContent = "Confirm in your wallet…";
+        const raw = await wallet.sign(wc, inputPaths);
+        const txid = await broadcast(p.net, raw);
+        toast(`Added ${n} period(s). The vault now holds ${satsToBch(newTotal)} BCH. <a href="${explorerTx(p.net, txid)}" target="_blank" rel="noopener">View transaction</a>`, "ok", 12000);
+        setTimeout(refresh, 1500);
+      } catch (e: any) { toast("Top-up failed: " + esc(e.message || String(e)), "err", 10000); }
+      b.disabled = false; b.innerHTML = `${icon("plus")} Add with my wallet`;
+    };
+    box.innerHTML = `<button class="btn btn-danger" id="v-cancel">${icon("x")} Cancel plan and refund me</button>`;
+    $("#v-cancel").onclick = async () => {
+      const b = $<HTMLButtonElement>("#v-cancel");
+      try {
+        b.disabled = true; b.textContent = "Confirm in your wallet…";
+        const { wc, inputPaths, refund } = await buildCancel(p, 0);
+        const raw = await wallet.sign(wc, inputPaths);
+        const txid = await broadcast(p.net, raw);
+        toast(`Cancelled. ${satsToBch(refund)} BCH is back in your wallet. <a href="${explorerTx(p.net, txid)}" target="_blank" rel="noopener">View transaction</a>`, "ok", 12000);
+        setTimeout(refresh, 1500);
+      } catch (e: any) {
+        const m = e.message || String(e);
+        if (/already empty/.test(m)) { toast("This vault is already cancelled or empty. Your refund went to your wallet.", "info", 10000); refresh(); }
+        else toast("Cancel failed: " + esc(m), "err", 10000);
+      }
+      b.disabled = false; b.innerHTML = `${icon("x")} Cancel plan and refund me`;
+    };
+  }
+}
+
+function pageMine() {
+  const list = savedVaults().map((c) => { try { return { c, p: decodeVault(c) }; } catch { return null; } }).filter(Boolean) as { c: string; p: VaultParams }[];
+  shell("mine", `<div class="wrap section"><h2>My plans</h2><p class="intro">Vaults opened in this browser. The links work anywhere.</p>
+    <div class="list">${list.length ? list.map(({ c, p }) => `<a class="row" href="#/v/${c}"><span><b>${esc(p.label)}</b><br><span class="note">${esc(p.deviceId)} · ${p.net} · ${satsToBch(p.pledge)} BCH per ${p.period} block(s)</span></span>${icon("chev")}</a>`).join("") : `<div class="empty">No plans yet. <a href="#/new">Start one</a>.</div>`}</div></div>`);
+}
+
+function pageGateway() {
+  shell("gateway", `<div class="wrap section"><h2>Village gateway</h2>
+  <p class="intro">The gateway is a small program next to an internet connection, with a LoRa board on USB. It never holds anyone's money or keys.</p>
+  <div class="grid3">
+    <div class="card"><div class="icon-tile">${icon("eye")}</div><h3>Reads</h3><p class="sub">Every 30 s it reads each registered vault from a public Bitcoin Cash server.</p></div>
+    <div class="card"><div class="icon-tile">${icon("coins")}</div><h3>Collects</h3><p class="sub">When a period is due it triggers the payment. No key needed: the contract pays the provider and keeps the rest.</p></div>
+    <div class="card"><div class="icon-tile">${icon("radio")}</div><h3>Broadcasts</h3><p class="sub">It sends <span class="mono">KL1|device|on|periods|height|counter|hmac</span> over 433 MHz LoRa. Devices verify it before switching.</p></div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Run it</h3><pre class="frame" style="white-space:pre-wrap">cd gateway
+cp devices.example.json devices.json   # add your vault links
+KEEPLIT_KEY=... node gateway.mjs --port /dev/ttyACM0</pre>
+  <p class="note">Without a board, <span class="mono">--dry-run</span> prints the frames instead of sending them.</p></div></div>`);
+}
+
+// ---------- router ----------
+function render() {
+  clearTimers();
+  const h = location.hash || "#/";
+  if (h.startsWith("#/v/")) pageVault(h.slice(4));
+  else if (h === "#/new") pageNew();
+  else if (h === "#/mine") pageMine();
+  else if (h === "#/gateway") pageGateway();
+  else if (h === "#how") { pageHome(); $("#how")?.scrollIntoView({ behavior: "smooth" }); }
+  else pageHome();
+}
+window.addEventListener("hashchange", () => { if (location.hash !== "#how") window.scrollTo(0, 0); render(); });
+wallet.on(() => { const h = location.hash; if (h === "#/new" || h.startsWith("#/v/")) render(); else { const chip = document.querySelector(".top .spacer"); if (chip) render(); } });
+wallet.resume();
+fetch("config.json", { cache: "no-store" }).then((r) => r.json()).then((j) => { cfg = { ...cfg, ...j }; }).catch(() => {}).finally(render);
+void hexToBin;

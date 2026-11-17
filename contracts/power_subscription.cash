@@ -1,0 +1,33 @@
+pragma cashscript ^0.14.0;
+
+// Power subscription vault (based on the CashScript "Mecenas" example).
+// The payer locks BCH here. Once per period, anyone may trigger `collect`,
+// which sends exactly one `pledge` to the energy provider and returns the
+// rest to this same contract. The payer can `cancel` at any time and take
+// back everything that is left.
+contract PowerSubscription(bytes20 provider, pubkey payer, int pledge, int period) {
+    function collect() {
+        // At most one payment per period (relative timelock, in blocks).
+        require(this.age >= period);
+        require(tx.inputs.length == 1);
+
+        require(tx.outputs[0].lockingBytecode == new LockingBytecodeP2PKH(provider));
+
+        int minerFee = 1000;
+        int currentValue = tx.inputs[this.activeInputIndex].value;
+        int changeValue = currentValue - pledge - minerFee;
+
+        if (changeValue <= pledge + minerFee) {
+            // Last payment: everything left goes to the provider.
+            require(tx.outputs[0].value == currentValue - minerFee);
+        } else {
+            require(tx.outputs[0].value == pledge);
+            require(tx.outputs[1].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);
+            require(tx.outputs[1].value == changeValue);
+        }
+    }
+
+    function cancel(sig s) {
+        require(checkSig(s, payer));
+    }
+}
