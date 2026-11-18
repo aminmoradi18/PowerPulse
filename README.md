@@ -32,6 +32,12 @@ npm test             # contract tests
 npm run compile      # after editing the contract
 ```
 
+## Publish on GitHub Pages
+
+The `main` branch is deployed automatically by `.github/workflows/pages.yml` after tests, typecheck, and build pass.
+For this repository, the site URL is <https://aminmoradi18.github.io/PowerPulse/>.
+In the repository settings, open **Pages** and set **Build and deployment → Source** to **GitHub Actions**.
+
 ## Test safely
 
 - The app starts on Chipnet. tBCH is test money with no real-world value. Switching to Mainnet requires a warning confirmation and uses real BCH.
