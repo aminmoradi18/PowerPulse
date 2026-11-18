@@ -88,6 +88,7 @@ nav.links a:hover, nav.links a.active { color: var(--text); background: var(--ca
 /* Hero */
 .hero { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: center; padding: 64px 0 40px; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--sun-2); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+.demo-note { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
 h1 { font-size: clamp(36px, 5.2vw, 60px); line-height: 1.04; letter-spacing: -0.03em; margin: 14px 0 18px; }
 h1 .hl { background: linear-gradient(90deg, var(--sun), var(--sun-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lead { font-size: 19px; color: #cbd5e1; max-width: 560px; margin: 0 0 26px; }
@@ -192,6 +193,16 @@ input:focus, select:focus { border-color: var(--sun); outline: none; box-shadow:
 .connect { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
 .qr { background: #fff; padding: 10px; border-radius: 12px; width: 188px; height: 188px; }
 .qr svg { width: 100%; height: 100%; display: block; }
+.wallet-connect-card { gap: 10px; }
+.wallet-connect-card h3 { margin-bottom: 0; }
+.optional { color: var(--muted); font-size: 12px; font-weight: 600; }
+.wallet-network { margin: 0; color: var(--muted); font-size: 13px; }
+.wallet-network b { color: var(--text); }
+.wallet-error { margin: 0; padding: 10px 12px; border: 1px solid rgba(239,68,68,.4); border-radius: 10px; background: var(--off-soft); color: #fecaca; font-size: 13px; }
+.qr-wrap { display: grid; justify-items: center; gap: 8px; color: var(--muted); font-size: 12px; text-align: center; }
+.pairing-title { margin: 0 0 8px; font-weight: 700; }
+.pairing-steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+.pairing-steps li + li { margin-top: 4px; }
 .uri { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; background: #0a1120; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
 .wallet-chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; padding: 7px 12px; border-radius: 999px; background: var(--on-soft); color: #86efac; border: 1px solid rgba(34,197,94,.35); }
 
@@ -222,6 +233,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: 
 @media (max-width: 560px) {
   .plans { grid-template-columns: 1fr; }
   .connect { grid-template-columns: 1fr; justify-items: start; }
+  .qr-wrap { justify-items: start; text-align: left; }
+  .qr { width: 176px; height: 176px; }
   .kv { grid-template-columns: 1fr 1fr; }
   header.top .wrap { gap: 8px; }
   .brand span { display: none; }

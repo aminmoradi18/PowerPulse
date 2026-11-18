@@ -196,10 +196,11 @@ function pageHome() {
         <h1>Keep the water <span class="hl">flowing.</span></h1>
         <p class="lead">Pay a farm's solar water pump, or a family's solar power, from anywhere. The money waits in a vault that <b>you</b> control, the provider can take only one period at a time, and you can cancel and get the rest back. Farms sit far from town, often in valleys with weak or no mobile signal: a radio carries the unlock.</p>
         <div class="cta">
-          <a class="btn btn-sun" href="#/new">${icon("plus")} Start a plan</a>
-          <a class="btn btn-ghost" href="#/simulator">${icon("play")} Try pump simulator</a>
+          <a class="btn btn-sun" href="#/simulator">${icon("play")} Try the demo — no wallet needed</a>
+          <a class="btn btn-ghost" href="#/new">${icon("plus")} Start a plan</a>
           <a class="btn btn-ghost" href="#how">${icon("play")} See how it works</a>
         </div>
+        <p class="demo-note">Judging the project? Start with the demo. You can try the pump without installing or connecting anything.</p>
         <div class="trust">
           <span>${icon("check")} Money stays on chain, not in a company account</span>
           <span>${icon("check")} Cancel any time, refund in one tap</span>
@@ -257,8 +258,8 @@ function pageHome() {
 
     <section class="section">
       <div class="card" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
-        <div><h3 style="font-size:22px">Try it in two minutes</h3><p class="sub">Use Cashonize (desktop, web or Android). Switch to Chipnet above for free test coins.</p></div>
-        <a class="btn btn-sun" href="#/new">${icon("plus")} Start a plan</a>
+        <div><h3 style="font-size:22px">Ready to try it for real?</h3><p class="sub">Connect Cashonize and use Chipnet test coins first. The demo above needs no wallet.</p></div>
+        <a class="btn btn-sun" href="#/new">${icon("plus")} Create a test plan</a>
       </div>
     </section>
   </div>`);
@@ -296,17 +297,26 @@ function connectBlock() {
     return `<div class="card"><h3>${icon("wallet")} Wallet connected</h3><p class="sub">${esc(wallet.name || "")} · payer address <span class="mono">${pk ? esc(addressOfPubkey(pk, net)) : "?"}</span></p>
       <div class="actions"><button class="btn btn-ghost btn-sm" id="w-disc">Disconnect</button></div></div>`;
   }
-  return `<div class="card"><h3>1. Connect your wallet</h3>
-    <p class="sub">Open <b>Cashonize</b> (HD wallet) → <b>Connect</b>, then scan the code or paste the link. Make sure the wallet is on <b>${net}</b>.</p>
-    <div id="w-pair" style="margin-top:14px">${wallet.status === "waiting" ? "" : `<button class="btn btn-sun" id="w-start">${icon("link")} Connect with WizardConnect</button>`}</div></div>`;
+  return `<div class="card wallet-connect-card"><h3>1. Connect Cashonize <span class="optional">(optional)</span></h3>
+    <p class="sub">Only needed if you want to fund a plan. You can explore the demo without a wallet. Connecting does not send money; Cashonize asks for your approval before any payment.</p>
+    <p class="wallet-network">Selected network: <b>${net === "chipnet" ? "Chipnet · test coins only" : "Mainnet · real BCH"}</b></p>
+    ${wallet.error ? `<p class="wallet-error" role="alert">Wallet connection issue: ${esc(wallet.error)}</p>` : ""}
+    <div id="w-pair">${wallet.status === "waiting" ? "" : `<button class="btn btn-sun" id="w-start">${icon("link")} Connect Cashonize</button>`}</div></div>`;
 }
 async function paintPairing() {
   const box = $("#w-pair"); if (!box || wallet.status !== "waiting") return;
-  const svg = await QRCode.toString(wallet.qrUri, { type: "svg", margin: 0 });
+  let svg: string;
+  try {
+    svg = await QRCode.toString(wallet.qrUri, { type: "svg", margin: 0 });
+  } catch (error) {
+    box.innerHTML = `<p class="wallet-error" role="alert">Could not create the connection QR code: ${esc(error instanceof Error ? error.message : String(error))}</p>`;
+    return;
+  }
   // The page may have re-rendered while the QR code was being drawn.
   if (!box.isConnected || wallet.status !== "waiting") return;
-  box.innerHTML = `<div class="connect"><div class="qr">${svg}</div><div>
-    <p class="sub" style="margin-bottom:8px">Waiting for the wallet…</p>
+  box.innerHTML = `<div class="connect"><div class="qr-wrap"><div class="qr">${svg}</div><span>Scan this code in Cashonize</span></div><div>
+    <p class="pairing-title" role="status" aria-live="polite">Waiting for Cashonize…</p>
+    <ol class="pairing-steps"><li>Open Cashonize on your phone or computer.</li><li>Choose <b>Connect</b> and scan this code.</li><li>Keep this page open while it connects.</li></ol>
     <div class="uri">${esc(wallet.uri)}</div>
     <div class="actions"><button class="btn btn-ghost btn-sm" id="w-copy">${icon("copy")} Copy link</button><button class="btn btn-ghost btn-sm" id="w-cancel">Cancel</button></div></div></div>`;
   $("#w-copy").onclick = () => copy(wallet.uri);
@@ -332,7 +342,7 @@ function bindConnect() {
 let planId: string = "demo";
 function pageNew() {
   const plan = PLANS.find((x) => x.id === planId)!;
-  shell("new", `<div class="wrap section"><h2>Start a plan</h2><p class="intro">Lock a few periods of a solar plan into a vault. You can cancel any time and get back everything not yet paid.</p>
+  shell("new", `<div class="wrap section"><h2>Start a plan</h2><p class="intro">Lock a few periods of a solar plan into a vault. You can cancel any time and get back everything not yet paid. Just looking? <a href="#/simulator">Try the pump demo without a wallet</a>.</p>
   <div class="grid2" style="align-items:start">
     <div class="form">${connectBlock()}
       <div class="card form"><h3>2. Choose the device and plan</h3>

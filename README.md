@@ -41,6 +41,7 @@ In the repository settings, open **Pages** and set **Build and deployment → So
 ## Test safely
 
 - The app starts on Chipnet. tBCH is test money with no real-world value. Switching to Mainnet requires a warning confirmation and uses real BCH.
+- The home page's **Try the demo — no wallet needed** button opens the pump simulator. Wallet connection is optional until a user chooses to fund a plan; every payment must still be reviewed and approved in Cashonize.
 - Funding spends wallet BCH only after the user reviews and approves the transaction in Cashonize. The amount, provider address, period count, and fees are shown before signing.
 - A due collection pays the provider from the vault and charges the contract's network fee. The final collection sweeps the selected vault output's remainder to the provider. The payer can cancel and recover the unspent vault balance, less the network fee.
 - The visual simulation on the home page is not a real pump. Use “Simulate one payment” to step the demo down to its low-balance warning. A physical pump changes state only when the gateway, operator-key board, LoRa boards, and device firmware are correctly configured and running.
