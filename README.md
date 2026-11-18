@@ -37,7 +37,8 @@ npm run compile      # after editing the contract
 - The app starts on Chipnet. tBCH is test money with no real-world value. Switching to Mainnet requires a warning confirmation and uses real BCH.
 - Funding spends wallet BCH only after the user reviews and approves the transaction in Cashonize. The amount, provider address, period count, and fees are shown before signing.
 - A due collection pays the provider from the vault and charges the contract's network fee. The final collection sweeps the selected vault output's remainder to the provider. The payer can cancel and recover the unspent vault balance, less the network fee.
-- The visual simulation on the home page is not a real pump. A physical pump changes state only when the gateway, operator-key board, LoRa boards, and device firmware are correctly configured and running.
+- The visual simulation on the home page is not a real pump. Use “Simulate one payment” to step the demo down to its low-balance warning. A physical pump changes state only when the gateway, operator-key board, LoRa boards, and device firmware are correctly configured and running.
+- When one paid period remains, the web device card warns the payer, the top-up card pulses, and the pump controller blinks amber while powered on. The operator-key display also says to top up soon.
 - Test with Chipnet and a low amount first. Do not connect real pump power during bench testing; use the documented relay/MOSFET interface and suitable electrical protection.
 
 Gateway:

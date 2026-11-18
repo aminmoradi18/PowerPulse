@@ -120,7 +120,9 @@ void sign(String body) {
   haveLast = true;
   lastTitle = p[1] + "  block " + p[4];
   lastBig = on ? "PUMP ON" : "LOCKED";
-  lastSmall = p[3] + (p[3] == "1" ? " period paid" : " periods paid") + "\n" + (forced ? "HELD BY OPERATOR" : String(signedCount) + " frames signed");
+  bool low = on && (p[3] == "1" || p[3] == "0");
+  lastSmall = low ? "LOW: top up soon\n" + String(signedCount) + " frames signed"
+                  : p[3] + (p[3] == "1" ? " period paid" : " periods paid") + "\n" + (forced ? "HELD BY OPERATOR" : String(signedCount) + " frames signed");
   if (hold) screen("KEEPLIT KEY", "HOLD ALL", "every pump locked\n" + p[1] + " held");
   else screen(lastTitle, lastBig, lastSmall);
   lights(on, !on, true);   // blue = just signed

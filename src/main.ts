@@ -125,10 +125,14 @@ function deviceCard(id: string, title: string, subtitle: string, simulated: bool
       <div><b data-k="left">–</b><span>Periods paid ahead</span></div>
       <div><b data-k="next">–</b><span>Next payment</span></div>
     </div>
+    <div class="low-balance-warning" data-k="low-warning" role="status" aria-live="polite" hidden>
+      Last period paid. Top up soon to keep the pump running.
+    </div>
     <div class="frame" data-k="frame">LoRa frame: waiting for chain data…</div>
     ${simulated ? `<div class="sim-controls" data-k="sim-controls">
       <button class="btn btn-danger btn-sm" data-k="sim-off">Turn pump off</button>
       <button class="btn btn-ghost btn-sm" data-k="sim-on">Turn pump on</button>
+      <button class="btn btn-ghost btn-sm" data-k="sim-use">Simulate one payment</button>
     </div><p class="note">Simulation only: these buttons do not control a real pump or send transactions.</p>` : ""}
   </div>`;
 }
@@ -144,6 +148,7 @@ function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
   scene.classList.remove("ping"); void scene.offsetWidth; scene.classList.add("ping");
   $("[data-k=bal]", root).innerHTML = `${satsToBch(s.balance)} <small style="font-size:12px;color:var(--muted)">BCH</small>`;
   $("[data-k=left]", root).textContent = String(s.periodsLeft);
+  $<HTMLElement>("[data-k=low-warning]", root).hidden = !(on && s.periodsLeft <= 1);
   $("[data-k=next]", root).textContent = !on ? "–" : s.canCollect ? "Due now" : s.ageBlocks === null ? "after 1st block" : `in ${s.blocksToNextCollect} block${s.blocksToNextCollect === 1 ? "" : "s"}`;
   const body = `KL1|${p.deviceId}|${on ? 1 : 0}|${s.periodsLeft}|${s.tipHeight}|${++frameCounter}`;
   $("[data-k=frame]", root).innerHTML = `LoRa frame the gateway sends: <b>${esc(body)}</b>|&lt;HMAC&gt; <br>Block ${s.tipHeight} · vault <a href="${explorerAddr(p.net, s.address)}" target="_blank" rel="noopener">${s.address.slice(0, 22)}…</a>`;
@@ -151,16 +156,29 @@ function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
 function explorerAddr(n: Net, a: string) { return n === "mainnet" ? `https://explorer.salemkode.com/address/${a}` : `https://chipnet.imaginary.cash/address/${a}`; }
 
 function simulateDevice(root: HTMLElement) {
-  let on = true;
+  let on = true, periodsLeft = 6, tip = 930000;
   const render = () => {
-    const fake: VaultState = { address: "simulation", balance: 18000n, utxoCount: 1, ageBlocks: 1, tipHeight: 930000, periodsLeft: 6, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
+    const fake: VaultState = { address: "simulation", balance: BigInt(periodsLeft) * 3000n, utxoCount: 1, ageBlocks: 1, tipHeight: tip, periodsLeft, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
     paintDevice(root, { net, deviceId: "ZA-014", label: "", providerAddress: "", payerPubkey: "", pledge: 2000n, period: 1 }, fake);
     $("[data-k=frame]", root).innerHTML = $("[data-k=frame]", root).innerHTML.replace(/<br>.*/, "<br>Simulation: use the buttons below to preview the pump state.");
     $<HTMLButtonElement>("[data-k=sim-off]", root).hidden = !on;
     $<HTMLButtonElement>("[data-k=sim-on]", root).hidden = on;
+    $<HTMLButtonElement>("[data-k=sim-on]", root).textContent = periodsLeft > 0 ? "Turn pump on" : "Top up and turn pump on";
+    $<HTMLButtonElement>("[data-k=sim-use]", root).hidden = !on || periodsLeft <= 0;
   };
   $("[data-k=sim-off]", root).onclick = () => { on = false; render(); };
-  $("[data-k=sim-on]", root).onclick = () => { on = true; render(); };
+  $("[data-k=sim-on]", root).onclick = () => {
+    if (periodsLeft <= 0) periodsLeft = 6;
+    on = true;
+    render();
+  };
+  $("[data-k=sim-use]", root).onclick = () => {
+    if (!on || periodsLeft <= 0) return;
+    periodsLeft--;
+    tip++;
+    if (periodsLeft === 0) on = false;
+    render();
+  };
   render();
 }
 
@@ -405,7 +423,7 @@ function pageVault(code: string) {
     <div class="form">
       <div class="card"><h3>Pay this period</h3><p class="sub">Anyone can send the due payment (normally the village gateway does it). The contract checks the amount, the receiver and the timing.</p>
         <div class="actions"><button class="btn btn-ghost" id="v-collect">${icon("coins")} Run due payment</button></div></div>
-      <div class="card"><h3>Add more periods</h3><p class="sub">The payer can top up the same vault: no new link, the device stays on. Old and new money become one vault coin, so one collection is allowed per period; the final collection sweeps the remainder.</p>
+      <div class="card" id="v-topup-card"><h3>Add more periods</h3><p class="sub">The payer can top up the same vault: no new link, the device stays on. Old and new money become one vault coin, so one collection is allowed per period; the final collection sweeps the remainder.</p>
         <div id="v-topup-box" style="margin-top:12px"></div></div>
       <div class="card"><h3>Cancel and refund</h3><p class="sub">Only the payer's wallet can do this. Everything left in the vault comes back, and the device locks at the next radio update.</p>
         <div id="v-cancel-box" style="margin-top:12px"></div></div>
@@ -414,7 +432,11 @@ function pageVault(code: string) {
     </div>
   </div></div>`);
   const root = $("#vault-device");
-  const refresh = () => vaultState(p).then((s) => paintDevice(root, p, s)).catch((e) => toast("Chain read failed: " + esc(e.message), "err"));
+  const topupCard = $("#v-topup-card");
+  const refresh = () => vaultState(p).then((s) => {
+    paintDevice(root, p, s);
+    topupCard.classList.toggle("pulse", s.active && s.periodsLeft <= 1);
+  }).catch((e) => toast("Chain read failed: " + esc(e.message), "err"));
   refresh(); timers.push(setInterval(refresh, 20000) as unknown as number);
   $("#v-collect").onclick = () => runCollect(p, refresh);
   $("#v-share").onclick = () => copy(location.href);
@@ -488,7 +510,7 @@ function pageSimulator() {
       </div>
     </div>
   </div>`);
-  simulateDevice($("#sim-device"));
+  timers.push(simulateDevice($("#sim-device")) as unknown as number);
 }
 
 function pageGateway() {

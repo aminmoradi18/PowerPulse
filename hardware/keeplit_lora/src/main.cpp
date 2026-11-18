@@ -35,8 +35,9 @@ SX1278 radio = new Module(LORA_NSS, RADIOLIB_NC, LORA_RST, RADIOLIB_NC);
 Adafruit_NeoPixel rgb(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 Preferences prefs;
 String line;
-bool ready = false, powerOn = false;
-uint32_t lastPoll = 0, lastCounter = 0, lastRx = 0;
+bool ready = false, powerOn = false, lowLedOn = true, showingLow = false;
+int periodsLeft = 0;
+uint32_t lastPoll = 0, lastCounter = 0, lastRx = 0, lastLedToggle = 0;
 
 String mac(const String& msg) {
   uint8_t out[32];
@@ -49,8 +50,31 @@ String mac(const String& msg) {
 
 void showPower() {
   digitalWrite(POWER_PIN, powerOn ? HIGH : LOW);
-  rgb.setPixelColor(0, powerOn ? rgb.Color(0, 40, 0) : rgb.Color(40, 0, 0));
+  bool low = powerOn && periodsLeft <= 1;
+  showingLow = low;
+  lowLedOn = true;
+  lastLedToggle = millis();
+  rgb.setPixelColor(0, low ? rgb.Color(40, 25, 0) : powerOn ? rgb.Color(0, 40, 0) : rgb.Color(40, 0, 0));
   rgb.show();
+}
+
+void updatePowerIndicator() {
+  if (powerOn && periodsLeft <= 1) {
+    if (!showingLow) {
+      showingLow = true;
+      lowLedOn = true;
+      lastLedToggle = millis();
+    } else if (millis() - lastLedToggle >= 500) {
+      lowLedOn = !lowLedOn;
+      lastLedToggle = millis();
+      rgb.setPixelColor(0, lowLedOn ? rgb.Color(40, 25, 0) : rgb.Color(0, 0, 0));
+      rgb.show();
+    }
+  } else if (showingLow) {
+    showingLow = false;
+    rgb.setPixelColor(0, powerOn ? rgb.Color(0, 40, 0) : rgb.Color(40, 0, 0));
+    rgb.show();
+  }
 }
 
 bool sendPacket(String msg) {
@@ -87,6 +111,8 @@ void handleFrame(const String& frame, float rssi) {
   lastCounter = counter;
   prefs.putUInt("counter", counter);
   powerOn = p[2] == "1";
+  periodsLeft = p[3].toInt();
+  prefs.putInt("periods", periodsLeft);
   prefs.putBool("on", powerOn);
   showPower();
   Serial.printf("KL ACCEPT on=%d periods=%s height=%s counter=%u RSSI %.0f\n", powerOn, p[3].c_str(), p[4].c_str(),
@@ -118,6 +144,7 @@ void setup() {
   prefs.begin("keeplit", false);
   lastCounter = prefs.getUInt("counter", 0);
   powerOn = prefs.getBool("on", false);
+  periodsLeft = prefs.getInt("periods", 0);
   showPower();
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
   // 2 dBm: plenty on a desk, safe with an untuned wire antenna
@@ -134,6 +161,7 @@ void loop() {
     if (ch == '\n' || ch == '\r') { if (line.length()) command(line); line = ""; }
     else line += ch;
   }
+  updatePowerIndicator();
   if (!ready) return;
   if (millis() - lastPoll > 20) {
     lastPoll = millis();
