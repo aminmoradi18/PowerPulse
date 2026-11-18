@@ -81,6 +81,7 @@ function shell(active: string, body: string) {
       <a href="#/" class="${active === "home" ? "active" : ""}">How it works</a>
       <a href="#/new" class="${active === "new" ? "active" : ""}">Start a plan</a>
       <a href="#/mine" class="${active === "mine" ? "active" : ""}">My plans</a>
+      <a href="#/simulator" class="${active === "simulator" ? "active" : ""}">Pump simulator</a>
       <a href="#/gateway" class="${active === "gateway" ? "active" : ""}">Village gateway</a>
     </nav>
     <div class="spacer"></div>
@@ -125,6 +126,10 @@ function deviceCard(id: string, title: string, subtitle: string, simulated: bool
       <div><b data-k="next">–</b><span>Next payment</span></div>
     </div>
     <div class="frame" data-k="frame">LoRa frame: waiting for chain data…</div>
+    ${simulated ? `<div class="sim-controls" data-k="sim-controls">
+      <button class="btn btn-danger btn-sm" data-k="sim-off">Turn pump off</button>
+      <button class="btn btn-ghost btn-sm" data-k="sim-on">Turn pump on</button>
+    </div><p class="note">Simulation only: these buttons do not control a real pump or send transactions.</p>` : ""}
   </div>`;
 }
 
@@ -146,15 +151,17 @@ function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
 function explorerAddr(n: Net, a: string) { return n === "mainnet" ? `https://explorer.salemkode.com/address/${a}` : `https://chipnet.imaginary.cash/address/${a}`; }
 
 function simulateDevice(root: HTMLElement) {
-  let on = true, left = 6, tip = 0;
-  const tick = () => {
-    const fake: VaultState = { address: "simulation", balance: BigInt(left) * 3000n, utxoCount: 1, ageBlocks: 1, tipHeight: 930000 + tip++, periodsLeft: left, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
+  let on = true;
+  const render = () => {
+    const fake: VaultState = { address: "simulation", balance: 18000n, utxoCount: 1, ageBlocks: 1, tipHeight: 930000, periodsLeft: 6, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
     paintDevice(root, { net, deviceId: "ZA-014", label: "", providerAddress: "", payerPubkey: "", pledge: 2000n, period: 1 }, fake);
-    $("[data-k=frame]", root).innerHTML = $("[data-k=frame]", root).innerHTML.replace(/<br>.*/, "<br>Simulation: a payment every few seconds, then the money runs out.");
-    left = on ? left - 1 : 6; if (left < 0) { on = false; left = 0; } else if (!on) on = true;
+    $("[data-k=frame]", root).innerHTML = $("[data-k=frame]", root).innerHTML.replace(/<br>.*/, "<br>Simulation: use the buttons below to preview the pump state.");
+    $<HTMLButtonElement>("[data-k=sim-off]", root).hidden = !on;
+    $<HTMLButtonElement>("[data-k=sim-on]", root).hidden = on;
   };
-  tick();
-  return setInterval(tick, 2500);
+  $("[data-k=sim-off]", root).onclick = () => { on = false; render(); };
+  $("[data-k=sim-on]", root).onclick = () => { on = true; render(); };
+  render();
 }
 
 // ---------- pages ----------
@@ -172,6 +179,7 @@ function pageHome() {
         <p class="lead">Pay a farm's solar water pump, or a family's solar power, from anywhere. The money waits in a vault that <b>you</b> control, the provider can take only one period at a time, and you can cancel and get the rest back. Farms sit far from town, often in valleys with weak or no mobile signal: a radio carries the unlock.</p>
         <div class="cta">
           <a class="btn btn-sun" href="#/new">${icon("plus")} Start a plan</a>
+          <a class="btn btn-ghost" href="#/simulator">${icon("play")} Try pump simulator</a>
           <a class="btn btn-ghost" href="#how">${icon("play")} See how it works</a>
         </div>
         <div class="trust">
@@ -242,7 +250,7 @@ function pageHome() {
     refresh(); timers.push(setInterval(refresh, 20000) as unknown as number);
     $("#demo-collect").onclick = () => runCollect(demo, refresh);
   } else {
-    timers.push(simulateDevice(root) as unknown as number);
+    simulateDevice(root);
   }
 }
 
@@ -467,6 +475,22 @@ function pageMine() {
     <div class="list">${list.length ? list.map(({ c, p }) => `<a class="row" href="#/v/${c}"><span><b>${esc(p.label)}</b><br><span class="note">${esc(p.deviceId)} · ${p.net} · ${satsToBch(p.pledge)} BCH per ${p.period} block(s)</span></span>${icon("chev")}</a>`).join("") : `<div class="empty">No plans yet. <a href="#/new">Start one</a>.</div>`}</div></div>`);
 }
 
+function pageSimulator() {
+  shell("simulator", `<div class="wrap section">
+    <h2>Hardware simulator</h2>
+    <p class="intro">Try the pump controls without connecting a wallet or hardware. Use the buttons to switch the simulated pump on and off.</p>
+    <div class="grid2" style="align-items:start">
+      ${deviceCard("sim-device", "Solar water pump · ZA-014", "Interactive hardware preview", true)}
+      <div class="card">
+        <h3>What this demo shows</h3>
+        <p class="sub">The pump illustration and status change when you press the buttons. This is only a browser simulation: it does not send a radio command, change a real vault, or control a physical pump.</p>
+        <p class="note">For a real device, the gateway and LoRa hardware must be installed and connected.</p>
+      </div>
+    </div>
+  </div>`);
+  simulateDevice($("#sim-device"));
+}
+
 function pageGateway() {
   shell("gateway", `<div class="wrap section"><h2>Village gateway</h2>
   <p class="intro">The gateway is a small program next to an internet connection, with a LoRa board on USB. It never holds anyone's money or keys.</p>
@@ -488,6 +512,7 @@ function render() {
   if (h.startsWith("#/v/")) pageVault(h.slice(4));
   else if (h === "#/new") pageNew();
   else if (h === "#/mine") pageMine();
+  else if (h === "#/simulator") pageSimulator();
   else if (h === "#/gateway") pageGateway();
   else if (h === "#how") { pageHome(); $("#how")?.scrollIntoView({ behavior: "smooth" }); }
   else pageHome();

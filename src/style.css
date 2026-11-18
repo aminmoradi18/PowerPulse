@@ -149,6 +149,8 @@ h1 .hl { background: linear-gradient(90deg, var(--sun), var(--sun-2)); -webkit-b
 .frame { margin-top: 12px; font-family: var(--mono); font-size: 12px; color: #a5b4cb; background: #0a1120; border: 1px dashed #2b3a57; border-radius: 10px; padding: 10px 12px; word-break: break-all; }
 .frame b { color: var(--sun-2); font-weight: 500; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.sim-controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.sim-controls [hidden] { display: none; }
 .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
 /* Forms */
