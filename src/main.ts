@@ -428,7 +428,10 @@ function pageVault(code: string) {
       <div class="card"><h3>Cancel and refund</h3><p class="sub">Only the payer's wallet can do this. Everything left in the vault comes back, and the device locks at the next radio update.</p>
         <div id="v-cancel-box" style="margin-top:12px"></div></div>
       <div class="card"><h3>Share</h3><p class="sub">The link describes the vault fully. Send it to the family or the provider so they can watch it.</p>
-        <div class="actions"><button class="btn btn-ghost btn-sm" id="v-share">${icon("copy")} Copy vault link</button></div></div>
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" id="v-share">${icon("copy")} Copy vault link</button>
+          <a class="btn btn-ghost btn-sm" href="#/label/${code}">${icon("qr")} Print QR label</a>
+        </div></div>
     </div>
   </div></div>`);
   const root = $("#vault-device");
@@ -513,6 +516,46 @@ function pageSimulator() {
   timers.push(simulateDevice($("#sim-device")) as unknown as number);
 }
 
+function pageLabel(code: string) {
+  let p: VaultParams;
+  try { p = decodeVault(code); }
+  catch {
+    shell("mine", `<div class="wrap section"><div class="empty">This vault label link is invalid. <a href="#/mine">Back to My plans</a>.</div></div>`);
+    return;
+  }
+  const vaultUrl = `${location.origin}${location.pathname}#/v/${code}`;
+  const networkLabel = p.net === "mainnet" ? "Mainnet" : "Chipnet";
+  shell("mine", `<section class="qr-label-page">
+    <h2>Device QR label</h2>
+    <p class="qr-label-help">Print this label and attach it to the pump. Scanning the QR opens this vault page.</p>
+    <div class="qr-label-card">
+      <div class="qr-label-code" id="label-qr" role="img" aria-label="QR code linking to this device vault">Preparing QR code…</div>
+      <div class="qr-label-details">
+        <strong class="qr-label-brand">${esc(PROJECT.name)}</strong>
+        <b class="qr-label-device">${esc(p.deviceId)}</b>
+        <span class="qr-label-name">${esc(p.label)}</span>
+        <span class="qr-label-network">${networkLabel}</span>
+        <span class="qr-label-instruction">Scan to see this pump's vault</span>
+      </div>
+    </div>
+    <div class="actions qr-label-actions">
+      <button class="btn btn-sun" id="label-print" disabled>${icon("print")} Print label</button>
+      <a class="btn btn-ghost" href="#/v/${code}">Back to vault</a>
+    </div>
+    <p class="note qr-label-help">In the print dialog, choose “Save as PDF” to download a PDF instead.</p>
+  </section>`);
+  document.body.classList.add("printing-label");
+  $("#label-print").onclick = () => window.print();
+  QRCode.toString(vaultUrl, { type: "svg", margin: 1, errorCorrectionLevel: "M" })
+    .then((svg) => {
+      $("#label-qr").innerHTML = svg;
+      $<HTMLButtonElement>("#label-print").disabled = false;
+    })
+    .catch((error: unknown) => {
+      $("#label-qr").textContent = `QR generation failed: ${error instanceof Error ? error.message : String(error)}`;
+    });
+}
+
 function pageGateway() {
   shell("gateway", `<div class="wrap section"><h2>Village gateway</h2>
   <p class="intro">The gateway is a small program next to an internet connection, with a LoRa board on USB. It never holds anyone's money or keys.</p>
@@ -530,8 +573,10 @@ KEEPLIT_KEY=... node gateway.mjs --port /dev/ttyACM0</pre>
 // ---------- router ----------
 function render() {
   clearTimers();
+  document.body.classList.remove("printing-label");
   const h = location.hash || "#/";
   if (h.startsWith("#/v/")) pageVault(h.slice(4));
+  else if (h.startsWith("#/label/")) pageLabel(h.slice(8));
   else if (h === "#/new") pageNew();
   else if (h === "#/mine") pageMine();
   else if (h === "#/simulator") pageSimulator();
