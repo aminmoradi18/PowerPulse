@@ -101,7 +101,7 @@ function shell(active: string, body: string) {
     </nav>
     <div class="spacer"></div>
     ${chip}
-    ${wallet.connected || wallet.status === "reconnecting" || wallet.status === "waiting" ? "" : `<button class="btn btn-sun btn-sm" id="w-header-connect">${icon("wallet")} Connect wallet</button>`}
+    ${wallet.connected || wallet.status === "reconnecting" || wallet.status === "waiting" ? "" : `<button class="btn btn-sun btn-sm wallet-header-connect" id="w-header-connect">${icon("wallet")} Connect wallet</button>`}
     <div class="net" role="group" aria-label="Network">
       <button data-net="mainnet" class="${net === "mainnet" ? "sel" : ""}">Mainnet</button>
       <button data-net="chipnet" class="${net === "chipnet" ? "sel" : ""}">Chipnet</button>

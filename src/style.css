@@ -88,6 +88,8 @@ nav.links a:hover, nav.links a.active { color: var(--text); background: var(--ca
 .btn-danger:hover { background: rgba(239,68,68,.22); }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
 .btn-sm { padding: 8px 12px; min-height: 36px; font-size: 13px; border-radius: 10px; }
+.btn.wallet-header-connect { flex: 0 0 auto; padding: 6px 9px; gap: 6px; min-height: 32px; font-size: 12px; white-space: nowrap; }
+.btn.wallet-header-connect svg { width: 15px; height: 15px; }
 :focus-visible { outline: 2px solid var(--sun-2); outline-offset: 2px; }
 
 /* Hero */
