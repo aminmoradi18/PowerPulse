@@ -62,8 +62,8 @@ function saveVault(code: string) { try { const v = savedVaults().filter((x) => x
 const app = $("#app");
 function shell(active: string, body: string) {
   const chip = wallet.connected
-    ? `<span class="wallet-chip">${icon("wallet")} ${esc(wallet.name || "Wallet")}</span>`
-    : wallet.status === "reconnecting" ? `<span class="pill">Reconnecting wallet…</span>` : "";
+    ? `<span class="wallet-chip" title="Wallet connected. The demo preview does not use it.">${icon("wallet")} <span>${esc(wallet.name || "Wallet")} connected</span></span>`
+    : wallet.status === "reconnecting" ? `<span class="wallet-chip reconnecting">${icon("wallet")} Reconnecting wallet…</span>` : "";
   app.innerHTML = `
   <div class="banner" role="region" aria-label="BCH BLAZE 2026 entry">
     <div class="wrap">
@@ -110,7 +110,7 @@ function shell(active: string, body: string) {
 function deviceCard(id: string, title: string, subtitle: string, simulated: boolean) {
   return `
   <div class="card device" id="${id}">
-    ${simulated ? `<span class="sim-tag">Simulation</span>` : ""}
+    ${simulated ? `<div class="sim-disclaimer" role="note"><strong>SIMULATED PREVIEW</strong><span>Example values only · no wallet used · no BCH sent</span></div>` : ""}
     <div class="device-head">
       <div><h3>${esc(title)}</h3><p class="sub">${esc(subtitle)}</p></div>
       <span class="pill" data-k="pill">Checking…</span>
@@ -123,9 +123,9 @@ function deviceCard(id: string, title: string, subtitle: string, simulated: bool
       <div class="ground"></div>
     </div>
     <div class="kv">
-      <div><b data-k="bal">–</b><span>In the vault</span></div>
-      <div><b data-k="left">–</b><span>Periods paid ahead</span></div>
-      <div><b data-k="next">–</b><span>Next payment</span></div>
+      <div><b data-k="bal">–</b><span data-k="bal-label">${simulated ? "Example balance" : "In the vault"}</span></div>
+      <div><b data-k="left">–</b><span data-k="left-label">${simulated ? "Example periods" : "Periods paid ahead"}</span></div>
+      <div><b data-k="next">–</b><span data-k="next-label">${simulated ? "Demo payment timing" : "Next payment"}</span></div>
     </div>
     <div class="low-balance-warning" data-k="low-warning" role="status" aria-live="polite" hidden>
       Last period paid. Top up soon to keep the pump running.
@@ -140,7 +140,7 @@ function deviceCard(id: string, title: string, subtitle: string, simulated: bool
 }
 
 let frameCounter = Math.floor(Date.now() / 1000);
-function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
+function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState, simulated = false) {
   const on = s.active;
   const pill = $("[data-k=pill]", root);
   pill.className = `pill live ${on ? "on" : "off"}`;
@@ -153,7 +153,11 @@ function paintDevice(root: HTMLElement, p: VaultParams, s: VaultState) {
   $<HTMLElement>("[data-k=low-warning]", root).hidden = !(on && s.periodsLeft <= 1);
   $("[data-k=next]", root).textContent = !on ? "–" : s.canCollect ? "Due now" : s.ageBlocks === null ? "after 1st block" : `in ${s.blocksToNextCollect} block${s.blocksToNextCollect === 1 ? "" : "s"}`;
   const body = `KL1|${p.deviceId}|${on ? 1 : 0}|${s.periodsLeft}|${s.tipHeight}|${++frameCounter}`;
-  $("[data-k=frame]", root).innerHTML = `LoRa frame the gateway sends: <b>${esc(body)}</b>|&lt;HMAC&gt; <br>Block ${s.tipHeight} · vault <a href="${explorerAddr(p.net, s.address)}" target="_blank" rel="noopener">${s.address.slice(0, 22)}…</a>`;
+  if (simulated) {
+    $("[data-k=frame]", root).innerHTML = `Example radio message (not transmitted): <b>${esc(body)}</b>|&lt;DEMO&gt;<br>Preview only · no blockchain or hardware connection.`;
+  } else {
+    $("[data-k=frame]", root).innerHTML = `LoRa frame the gateway sends: <b>${esc(body)}</b>|&lt;HMAC&gt; <br>Block ${s.tipHeight} · vault <a href="${explorerAddr(p.net, s.address)}" target="_blank" rel="noopener">${s.address.slice(0, 22)}…</a>`;
+  }
 }
 function explorerAddr(n: Net, a: string) { return n === "mainnet" ? `https://explorer.salemkode.com/address/${a}` : `https://chipnet.imaginary.cash/address/${a}`; }
 
@@ -161,8 +165,7 @@ function simulateDevice(root: HTMLElement) {
   let on = true, periodsLeft = 6, tip = 930000;
   const render = () => {
     const fake: VaultState = { address: "simulation", balance: BigInt(periodsLeft) * 3000n, utxoCount: 1, ageBlocks: 1, tipHeight: tip, periodsLeft, canCollect: true, nextPayment: 2000n, blocksToNextCollect: 0, active: on };
-    paintDevice(root, { net, deviceId: "ZA-014", label: "", providerAddress: "", payerPubkey: "", pledge: 2000n, period: 1 }, fake);
-    $("[data-k=frame]", root).innerHTML = $("[data-k=frame]", root).innerHTML.replace(/<br>.*/, "<br>Simulation: use the buttons below to preview the pump state.");
+    paintDevice(root, { net, deviceId: "ZA-014", label: "", providerAddress: "", payerPubkey: "", pledge: 2000n, period: 1 }, fake, true);
     $<HTMLButtonElement>("[data-k=sim-off]", root).hidden = !on;
     $<HTMLButtonElement>("[data-k=sim-on]", root).hidden = on;
     $<HTMLButtonElement>("[data-k=sim-on]", root).textContent = periodsLeft > 0 ? "Turn pump on" : "Top up and turn pump on";
@@ -210,7 +213,7 @@ function pageHome() {
         </div>
       </div>
       <div>
-        ${deviceCard("demo-device", demo ? demo.label : "Baba's solar water pump · ZA-014", demo ? `Live ${net} vault · device ${demo.deviceId}` : "How a device reacts to its vault", !demo)}
+        ${deviceCard("demo-device", demo ? demo.label : "Baba's solar water pump · ZA-014", demo ? `Live ${net} vault · device ${demo.deviceId}` : "Simulated preview · no live vault", !demo)}
         ${demo ? `<div class="actions">
           <button class="btn btn-ghost btn-sm" id="demo-collect">${icon("coins")} Run this period's payment (anyone can)</button>
           <a class="btn btn-ghost btn-sm" href="#/v/${encodeVault(demo)}">${icon("eye")} Open vault</a></div>
@@ -672,7 +675,7 @@ function pageProvider() {
 function pageSimulator() {
   shell("simulator", `<div class="wrap section">
     <h2>Hardware simulator</h2>
-    <p class="intro">Try the pump controls without connecting a wallet or hardware. Use the buttons to switch the simulated pump on and off.</p>
+    <p class="intro">Try the pump controls without a wallet, real money, or hardware. The balance and payment counts are examples that change only in this browser preview.</p>
     <div class="grid2" style="align-items:start">
       ${deviceCard("sim-device", "Solar water pump · ZA-014", "Interactive hardware preview", true)}
       <div class="card">
