@@ -63,6 +63,7 @@ class Wallet {
   async disconnect(notifyWallet = true): Promise<void> {
     const manager = this.manager;
     const relay = this.relay;
+    const wasConnected = this.connected;
     this.manager = null;
     this.relay = null;
     this.status = "idle";
@@ -72,7 +73,7 @@ class Wallet {
     this.error = null;
 
     let notificationError: unknown;
-    if (manager && notifyWallet) {
+    if (manager && notifyWallet && wasConnected) {
       try {
         await manager.sendDisconnect("PowerPulse disconnected");
       } catch (error) {

@@ -101,6 +101,7 @@ function shell(active: string, body: string) {
     </nav>
     <div class="spacer"></div>
     ${chip}
+    ${wallet.connected || wallet.status === "reconnecting" || wallet.status === "waiting" ? "" : `<button class="btn btn-sun btn-sm" id="w-header-connect">${icon("wallet")} Connect wallet</button>`}
     <div class="net" role="group" aria-label="Network">
       <button data-net="mainnet" class="${net === "mainnet" ? "sel" : ""}">Mainnet</button>
       <button data-net="chipnet" class="${net === "chipnet" ? "sel" : ""}">Chipnet</button>
@@ -125,6 +126,17 @@ function shell(active: string, body: string) {
     try { await wallet.disconnect(); render(); }
     catch (error) { toast("Wallet disconnect failed: " + esc(error instanceof Error ? error.message : String(error)), "err", 10000); }
   };
+  const connect = $("#w-header-connect", app);
+  if (connect) connect.onclick = startWalletConnection;
+}
+
+function startWalletConnection() {
+  if (location.hash !== "#/new") location.hash = "#/new";
+  if (wallet.connected || wallet.status === "reconnecting") return;
+  if (wallet.status === "waiting") return;
+  void wallet.connect().catch((error: unknown) => {
+    toast("Wallet connection failed: " + esc(error instanceof Error ? error.message : String(error)), "err", 10000);
+  });
 }
 
 // ---------- device panel (shared by landing and vault page) ----------
@@ -223,6 +235,7 @@ function pageHome() {
         <p class="lead">Pay a farm's solar water pump, or a family's solar power, from anywhere. The money waits in a vault that <b>you</b> control, the provider can take only one period at a time, and you can cancel and get the rest back. Farms sit far from town, often in valleys with weak or no mobile signal: a radio carries the unlock.</p>
         <div class="cta">
           <a class="btn btn-sun" href="#/simulator">${icon("play")} Try the demo — no wallet needed</a>
+          ${wallet.connected || wallet.status === "reconnecting" || wallet.status === "waiting" ? "" : `<button class="btn btn-ghost" id="w-home-connect">${icon("wallet")} Connect Cashonize</button>`}
           <a class="btn btn-ghost" href="#/new">${icon("plus")} Start a plan</a>
           <a class="btn btn-ghost" href="#how">${icon("play")} See how it works</a>
         </div>
@@ -289,6 +302,7 @@ function pageHome() {
       </div>
     </section>
   </div>`);
+  $("#w-home-connect").onclick = startWalletConnection;
   const root = $("#demo-device");
   if (demo) {
     const refresh = () => vaultState(demo).then((s) => paintDevice(root, demo, s)).catch((e) => toast("Chain read failed: " + esc(e.message), "err"));
@@ -385,7 +399,8 @@ function pageNew() {
     <div class="card form" style="position:sticky;top:84px"><h3>3. Fund the vault</h3>
       <div class="summary" id="f-sum"></div>
       <button class="btn btn-sun" id="f-go" ${wallet.connected ? "" : "disabled"}>${icon("lock")} Fund vault with my wallet</button>
-      <p class="note">Your wallet shows the transaction before you sign. The final collection may pay the remaining vault balance to the provider after the fee. The vault address is computed from the plan, so anyone can check it.</p>
+      <p class="wallet-sign-status" id="f-status" role="status" aria-live="polite" hidden></p>
+      <p class="note">Connect Cashonize above, then fund when ready. Your wallet will ask you to review and approve the transaction before anything is broadcast. The final collection may pay the remaining vault balance to the provider after the fee. The vault address is computed from the plan, so anyone can check it.</p>
     </div>
   </div></div>`);
   bindConnect();
@@ -420,7 +435,13 @@ function pageNew() {
         && !window.confirm(`The provider address is your own wallet address:\n${providerAddress}\n\nPayments will return to you, but each on-chain payment still costs a network fee. Continue with this self-test?`)) return;
       const p: VaultParams = { net, deviceId, label: ($("#f-label") as HTMLInputElement).value.trim() || deviceId,
         providerAddress, payerPubkey: binToHex(pk), pledge: price, period: plan.period };
-      btn.disabled = true; btn.textContent = "Finding coins in your wallet…";
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "Finding coins in your wallet…";
+      const status = $("#f-status");
+      status.classList.remove("wallet-sign-error");
+      status.hidden = false;
+      status.textContent = `Checking for spendable ${net === "chipnet" ? "Chipnet test coins" : "BCH"}…`;
       // Same settings = same vault address. Do not add a second coin to it: send the payer to "Add more periods".
       const existing = await vaultState(p);
       if (existing.balance > 0n) {
@@ -434,15 +455,23 @@ function pageNew() {
       const changeAddr = addressOfPubkey(wallet.pubkey("change", 0) || pk, net);
       const { wc, inputPaths } = buildFunding(p, coins, total, changeAddr);
       btn.textContent = "Confirm in your wallet…";
+      status.textContent = "Request sent to Cashonize. Open your wallet, review the network, amount, fee and destination, then approve or reject. Keep this page open.";
       const raw = await wallet.sign(wc, inputPaths);
       btn.textContent = "Broadcasting…";
+      status.textContent = "Approved in your wallet. Broadcasting the transaction…";
       const txid = await broadcast(net, raw);
       const code = encodeVault(p); saveVault(code);
       toast(`Vault funded. <a href="${explorerTx(net, txid)}" target="_blank" rel="noopener">View transaction</a>`, "ok", 12000);
       location.hash = `#/v/${code}`;
     } catch (e: any) {
+      const status = $("#f-status");
+      status.hidden = false;
+      status.classList.add("wallet-sign-error");
+      status.textContent = "Funding was not completed. Check the wallet response and try again.";
       toast("Could not fund: " + esc(e.message || String(e)), "err", 10000);
-      btn.disabled = !wallet.connected; btn.innerHTML = `${icon("lock")} Fund vault with my wallet`;
+      btn.removeAttribute("aria-busy");
+      btn.disabled = !wallet.connected;
+      btn.innerHTML = `${icon("lock")} Fund vault with my wallet`;
     }
   };
 }

@@ -224,6 +224,11 @@ input:focus, select:focus { border-color: var(--sun); outline: none; box-shadow:
 .wallet-network-label { color: var(--muted); font-size: 12px; }
 .wallet-full-address { display: block; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
 .wallet-menu-panel .btn { justify-content: flex-start; }
+.wallet-sign-status { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid rgba(245,184,61,.38); border-radius: 12px; background: rgba(245,184,61,.09); color: #ffe2a3; font-size: 13px; line-height: 1.5; }
+.wallet-sign-status[hidden] { display: none; }
+.wallet-sign-status::before { content: ""; flex: 0 0 9px; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--sun); animation: pulse 1.4s infinite; }
+.wallet-sign-status.wallet-sign-error { border-color: rgba(239,68,68,.4); background: var(--off-soft); color: #fecaca; }
+.wallet-sign-status.wallet-sign-error::before { background: var(--off); animation: none; }
 
 /* Toasts */
 #toasts { position: fixed; bottom: 16px; right: 16px; left: 16px; display: grid; gap: 8px; justify-items: end; z-index: 50; pointer-events: none; }
