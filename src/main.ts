@@ -81,6 +81,7 @@ function shell(active: string, body: string) {
       <a href="#/" class="${active === "home" ? "active" : ""}">How it works</a>
       <a href="#/new" class="${active === "new" ? "active" : ""}">Start a plan</a>
       <a href="#/mine" class="${active === "mine" ? "active" : ""}">My plans</a>
+      <a href="#/provider" class="${active === "provider" ? "active" : ""}">Provider dashboard</a>
       <a href="#/simulator" class="${active === "simulator" ? "active" : ""}">Pump simulator</a>
       <a href="#/gateway" class="${active === "gateway" ? "active" : ""}">Village gateway</a>
     </nav>
@@ -100,7 +101,8 @@ function shell(active: string, body: string) {
   <footer><div class="wrap">
     <span>${PROJECT.name}: pay-as-you-go solar on Bitcoin Cash, unlocked over LoRa radio.</span>
     <span>Contract based on the CashScript "Mecenas" example. Wallet link: WizardConnect.</span>
-  </div></footer>`;
+  </div></footer>
+  <div id="toasts" aria-live="polite"></div>`;
   app.querySelectorAll<HTMLButtonElement>(".net button").forEach((b) => (b.onclick = () => setNet(b.dataset.net as Net)));
 }
 
@@ -510,6 +512,163 @@ function pageMine() {
     <div class="list">${list.length ? list.map(({ c, p }) => `<a class="row" href="#/v/${c}"><span><b>${esc(p.label)}</b><br><span class="note">${esc(p.deviceId)} · ${p.net} · ${satsToBch(p.pledge)} BCH per ${p.period} block(s)</span></span>${icon("chev")}</a>`).join("") : `<div class="empty">No plans yet. <a href="#/new">Start one</a>.</div>`}</div></div>`);
 }
 
+const PROVIDER_VAULTS_KEY = "powerpulse-provider-vaults";
+function providerVaults(): string[] {
+  try {
+    const saved = localStorage.getItem(PROVIDER_VAULTS_KEY);
+    if (saved === null) return savedVaults();
+    const stored: unknown = JSON.parse(saved);
+    return Array.isArray(stored) ? stored.filter((code): code is string => typeof code === "string") : [];
+  } catch (error) {
+    toast("Could not read saved provider vaults: " + esc(error instanceof Error ? error.message : String(error)), "err");
+    return [];
+  }
+}
+function saveProviderVault(code: string): void {
+  try {
+    const list = [code, ...providerVaults().filter((saved) => saved !== code)].slice(0, 20);
+    localStorage.setItem(PROVIDER_VAULTS_KEY, JSON.stringify(list));
+  } catch (error) {
+    throw new Error("Could not save this vault in this browser: " + (error instanceof Error ? error.message : String(error)));
+  }
+}
+function sameVault(a: VaultParams, b: VaultParams): boolean {
+  return a.net === b.net && a.providerAddress.toLowerCase() === b.providerAddress.toLowerCase()
+    && a.payerPubkey.toLowerCase() === b.payerPubkey.toLowerCase() && a.pledge === b.pledge && a.period === b.period;
+}
+function pageProvider() {
+  const codes = [...new Set(providerVaults())].slice(0, 20);
+  const entries: { code: string; params: VaultParams }[] = [];
+  codes.forEach((code) => {
+    try {
+      const params = decodeVault(code);
+      if (!entries.some((entry) => sameVault(entry.params, params))) entries.push({ code, params });
+    } catch (error) {
+      toast("Skipping an invalid saved vault link: " + esc(error instanceof Error ? error.message : String(error)), "err");
+    }
+  });
+  shell("provider", `<div class="wrap section">
+    <h2>Provider dashboard</h2>
+    <p class="intro">Track shared pump vaults, see when a payment is due, and collect one payment at a time. Anyone can trigger a due payment; it goes only to the provider address set in that vault.</p>
+    <div class="card provider-import">
+      <h3>Add a shared vault</h3>
+      <p class="sub">Paste the link shared by the payer. Links are saved only in this browser; you can add up to 20 vaults.</p>
+      <form class="provider-import-form" id="provider-import-form">
+        <input id="provider-vault-link" aria-label="Shared vault link" autocomplete="off" placeholder="Paste the full vault link here" required>
+        <button class="btn btn-sun" type="submit">${icon("plus")} Add vault</button>
+      </form>
+    </div>
+    <div class="provider-list-head">
+      <h3>Tracked vaults <span class="provider-count">${entries.length}</span></h3>
+      <button class="btn btn-ghost btn-sm" id="provider-refresh" ${entries.length ? "" : "disabled"}>${icon("refresh")} Refresh all</button>
+    </div>
+    <div class="provider-list" id="provider-list">
+      ${entries.length ? entries.map(({ code, params: p }) => `<article class="card provider-vault" data-code="${esc(code)}">
+        <div class="provider-vault-head">
+          <div><h3>${esc(p.label)}</h3><p class="sub">${esc(p.deviceId)} · ${p.net === "chipnet" ? "Chipnet · test BCH" : "Mainnet · real BCH"}</p></div>
+          <span class="pill" data-provider-state role="status" aria-live="polite">Checking…</span>
+        </div>
+        <div class="provider-stats" data-provider-stats><span>Loading vault details…</span></div>
+        <p class="provider-address"><b>Payment goes to:</b> <span class="mono">${esc(p.providerAddress)}</span></p>
+        <div class="actions">
+          <button class="btn btn-sun btn-sm" data-provider-collect disabled>${icon("coins")} Collect due payment</button>
+          <a class="btn btn-ghost btn-sm" href="#/v/${encodeURIComponent(code)}">Open vault</a>
+          <button class="btn btn-ghost btn-sm" data-provider-remove>Remove</button>
+        </div>
+      </article>`).join("") : `<div class="empty">No vaults added yet. Paste a vault link above to start tracking provider payments.</div>`}
+    </div>
+    <p class="note">Before collecting, check the network and payment address. Mainnet payments use real BCH and cannot be reversed. Each collection needs its own confirmation.</p>
+  </div>`);
+
+  const list = $("#provider-list");
+  const refreshOne = async (code: string) => {
+    const card = [...list.querySelectorAll<HTMLElement>(".provider-vault")].find((item) => item.dataset.code === code);
+    if (!card) return;
+    const p = decodeVault(code);
+    const state = $<HTMLElement>("[data-provider-state]", card);
+    const stats = $<HTMLElement>("[data-provider-stats]", card);
+    const collectButton = $<HTMLButtonElement>("[data-provider-collect]", card);
+    state.className = "pill";
+    state.textContent = "Checking…";
+    collectButton.disabled = true;
+    stats.textContent = "Loading vault details…";
+    let timeoutId = 0;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error("Chain request timed out. Check your connection and try refresh again.")), 15000);
+    });
+    try {
+      const s = await Promise.race([vaultState(p), timeout]);
+      state.className = `pill ${s.active ? "on" : "off"}`;
+      state.textContent = s.canCollect ? "Payment due" : s.active ? "Active" : "Empty or cancelled";
+      stats.innerHTML = `<span><b>${satsToBch(s.balance)} BCH</b><small>Vault balance</small></span>
+        <span><b>${s.periodsLeft}</b><small>Periods remaining</small></span>
+        <span><b>${s.canCollect && s.nextPayment !== null ? `${satsToBch(s.nextPayment)} BCH` : s.active ? `${s.blocksToNextCollect} blocks` : "—"}</b><small>${s.canCollect ? "Due to provider" : "Until next payment"}</small></span>`;
+      collectButton.disabled = !s.canCollect;
+    } catch (error) {
+      state.className = "pill off";
+      state.textContent = "Could not load";
+      stats.innerHTML = `<span class="provider-read-error" role="alert">${esc(error instanceof Error ? error.message : String(error))}</span>`;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+  const refreshAll = async () => Promise.all(entries.map(({ code }) => refreshOne(code)));
+  $("#provider-import-form").onsubmit = (event) => {
+    event.preventDefault();
+    const input = $<HTMLInputElement>("#provider-vault-link");
+    try {
+      const value = input.value.trim();
+      const marker = value.indexOf("#/v/");
+      const code = (marker >= 0 ? value.slice(marker + 4) : value).split(/[?&]/, 1)[0].trim();
+      const p = decodeVault(code);
+      if ((p.net !== "mainnet" && p.net !== "chipnet") || !Number.isInteger(p.period) || p.period < 1 || p.pledge <= 0n) {
+        throw new Error("The shared link does not contain valid vault details.");
+      }
+      if (!/^(02|03)[0-9a-f]{64}$/i.test(p.payerPubkey)) throw new Error("The shared link has an invalid payer key.");
+      p.providerAddress = normalizeAddress(p.providerAddress, p.net);
+      const canonical = encodeVault(p);
+      if (entries.some((entry) => sameVault(entry.params, p))) {
+        toast("This vault is already on the dashboard.", "info");
+        return;
+      }
+      if (codes.length >= 20) throw new Error("The dashboard can track up to 20 vaults.");
+      saveProviderVault(canonical);
+      toast("Vault added to the provider dashboard.", "ok");
+      render();
+    } catch (error) {
+      toast("Could not add vault: " + esc(error instanceof Error ? error.message : String(error)), "err", 10000);
+    }
+  };
+  list.querySelectorAll<HTMLButtonElement>("[data-provider-collect]").forEach((button) => {
+    button.onclick = async () => {
+      const card = button.closest<HTMLElement>(".provider-vault");
+      if (!card?.dataset.code) return;
+      const code = card.dataset.code;
+      try {
+        button.disabled = true;
+        await runCollect(decodeVault(code), () => { void refreshOne(code); });
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    };
+  });
+  list.querySelectorAll<HTMLButtonElement>("[data-provider-remove]").forEach((button) => {
+    button.onclick = () => {
+      const code = button.closest<HTMLElement>(".provider-vault")?.dataset.code;
+      if (!code || !window.confirm("Remove this vault from this browser's provider dashboard? This does not affect the vault or its funds.")) return;
+      try {
+        localStorage.setItem(PROVIDER_VAULTS_KEY, JSON.stringify(providerVaults().filter((saved) => saved !== code)));
+        render();
+      } catch (error) {
+        toast("Could not remove vault: " + esc(error instanceof Error ? error.message : String(error)), "err", 10000);
+      }
+    };
+  });
+  $("#provider-refresh").onclick = () => { void refreshAll(); };
+  void refreshAll();
+  if (entries.length) timers.push(setInterval(() => { void refreshAll(); }, 30000) as unknown as number);
+}
+
 function pageSimulator() {
   shell("simulator", `<div class="wrap section">
     <h2>Hardware simulator</h2>
@@ -589,6 +748,7 @@ function render() {
   else if (h.startsWith("#/label/")) pageLabel(h.slice(8));
   else if (h === "#/new") pageNew();
   else if (h === "#/mine") pageMine();
+  else if (h === "#/provider") pageProvider();
   else if (h === "#/simulator") pageSimulator();
   else if (h === "#/gateway") pageGateway();
   else if (h === "#how") { pageHome(); $("#how")?.scrollIntoView({ behavior: "smooth" }); }

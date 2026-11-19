@@ -47,6 +47,7 @@ In the repository settings, open **Pages** and set **Build and deployment → So
 - The visual simulation on the home page is not a real pump. Use “Simulate one payment” to step the demo down to its low-balance warning. A physical pump changes state only when the gateway, operator-key board, LoRa boards, and device firmware are correctly configured and running.
 - When one paid period remains, the web device card warns the payer, the top-up card pulses, and the pump controller blinks amber while powered on. The operator-key display also says to top up soon.
 - Each vault page offers a printable 90 × 55 mm device label. Its QR code opens that vault page; use the browser print dialog's “Save as PDF” option to download it.
+- The provider dashboard tracks up to 20 shared vault links in the current browser, shows their live balance and payment status, and allows one due collection at a time after a confirmation. It has no server-side account or shared provider database.
 - Test with Chipnet and a low amount first. Do not connect real pump power during bench testing; use the documented relay/MOSFET interface and suitable electrical protection.
 
 Gateway:

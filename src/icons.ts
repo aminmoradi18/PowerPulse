@@ -19,6 +19,7 @@ const P: Record<string, string> = {
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   chev: '<path d="m9 18 6-6-6-6"/>',
+  refresh: '<path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"/>',
 };
 export function icon(name: string): string {
   if (name === "logo")
