@@ -61,8 +61,22 @@ function saveVault(code: string) { try { const v = savedVaults().filter((x) => x
 // ---------- shell ----------
 const app = $("#app");
 function shell(active: string, body: string) {
+  const pubkey = wallet.connected ? wallet.pubkey("receive", 0) : undefined;
+  const address = pubkey ? addressOfPubkey(pubkey, net) : "";
+  const shortAddress = address ? `${address.slice(0, 12)}…${address.slice(-5)}` : "";
   const chip = wallet.connected
-    ? `<span class="wallet-chip" title="Wallet connected. The demo preview does not use it.">${icon("wallet")} <span>${esc(wallet.name || "Wallet")} connected</span></span>`
+    ? `<details class="wallet-menu">
+        <summary class="wallet-chip" aria-label="Connected wallet ${esc(shortAddress)}" title="Connected wallet · ${esc(address)}">
+          ${icon("wallet")}<span class="wallet-short-address">${esc(shortAddress || wallet.name || "Wallet connected")}</span><span class="wallet-menu-caret">${icon("chev")}</span>
+        </summary>
+        <div class="wallet-menu-panel">
+          <strong>${esc(wallet.name || "Cashonize")} connected</strong>
+          <span class="wallet-network-label">${net === "chipnet" ? "Chipnet · test network" : "Mainnet · real BCH"}</span>
+          <code class="wallet-full-address">${esc(address || "Wallet address unavailable")}</code>
+          <button class="btn btn-ghost btn-sm" id="w-copy-address" ${address ? "" : "disabled"}>${icon("copy")} Copy address</button>
+          <button class="btn btn-ghost btn-sm" id="w-header-disc">Disconnect wallet</button>
+        </div>
+      </details>`
     : wallet.status === "reconnecting" ? `<span class="wallet-chip reconnecting">${icon("wallet")} Reconnecting wallet…</span>` : "";
   app.innerHTML = `
   <div class="banner" role="region" aria-label="BCH BLAZE 2026 entry">
@@ -104,6 +118,13 @@ function shell(active: string, body: string) {
   </div></footer>
   <div id="toasts" aria-live="polite"></div>`;
   app.querySelectorAll<HTMLButtonElement>(".net button").forEach((b) => (b.onclick = () => setNet(b.dataset.net as Net)));
+  const copyAddress = $("#w-copy-address", app);
+  if (copyAddress && address) copyAddress.onclick = () => copy(address);
+  const disconnect = $("#w-header-disc", app);
+  if (disconnect) disconnect.onclick = async () => {
+    try { await wallet.disconnect(); render(); }
+    catch (error) { toast("Wallet disconnect failed: " + esc(error instanceof Error ? error.message : String(error)), "err", 10000); }
+  };
 }
 
 // ---------- device panel (shared by landing and vault page) ----------

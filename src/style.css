@@ -212,7 +212,18 @@ input:focus, select:focus { border-color: var(--sun); outline: none; box-shadow:
 .pairing-steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
 .pairing-steps li + li { margin-top: 4px; }
 .uri { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; background: #0a1120; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
-.wallet-chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; padding: 7px 12px; border-radius: 999px; background: var(--on-soft); color: #86efac; border: 1px solid rgba(34,197,94,.35); }
+.wallet-menu { position: relative; flex: 0 0 auto; }
+.wallet-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 178px; padding: 7px 9px; border: 1px solid rgba(34,197,94,.35); border-radius: 999px; background: var(--on-soft); color: #86efac; font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer; list-style: none; white-space: nowrap; }
+.wallet-chip::-webkit-details-marker { display: none; }
+.wallet-chip > svg { width: 15px; height: 15px; flex: none; }
+.wallet-short-address { overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 11px; }
+.wallet-menu-caret, .wallet-menu-caret svg { display: block; width: 13px; height: 13px; flex: none; transition: transform .18s ease; }
+.wallet-menu[open] .wallet-menu-caret svg { transform: rotate(90deg); }
+.wallet-menu-panel { position: absolute; z-index: 40; top: calc(100% + 10px); right: 0; display: grid; gap: 10px; width: min(320px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); }
+.wallet-menu-panel > strong { font-size: 14px; }
+.wallet-network-label { color: var(--muted); font-size: 12px; }
+.wallet-full-address { display: block; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
+.wallet-menu-panel .btn { justify-content: flex-start; }
 
 /* Toasts */
 #toasts { position: fixed; bottom: 16px; right: 16px; left: 16px; display: grid; gap: 8px; justify-items: end; z-index: 50; pointer-events: none; }
