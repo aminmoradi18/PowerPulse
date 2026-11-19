@@ -2,7 +2,7 @@
 import type { Net } from "./chain";
 
 export const PROJECT = {
-  name: "PowerPulse",
+  name: "KeepLit",
   tagline: "Keep the water flowing",
   repo: "https://github.com/aminmoradi18/PowerPulse",
   slides: "", // link to the Widget Factory presentation (Google Slides), added before submission

@@ -75,7 +75,7 @@ class Wallet {
     let notificationError: unknown;
     if (manager && notifyWallet && wasConnected) {
       try {
-        await manager.sendDisconnect("PowerPulse disconnected");
+        await manager.sendDisconnect("KeepLit disconnected");
       } catch (error) {
         notificationError = error;
       }
@@ -128,7 +128,7 @@ class Wallet {
   }
 
   private createManager(): DappConnectionManager {
-    return new DappConnectionManager("PowerPulse", undefined, {
+    return new DappConnectionManager("KeepLit", undefined, {
       session: { key: SESSION_KEY },
     });
   }
