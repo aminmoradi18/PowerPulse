@@ -392,7 +392,7 @@ function pageNew() {
           ${PLANS.map((x) => `<button class="plan ${x.id === planId ? "sel" : ""}" data-plan="${x.id}"><b>${x.name}</b><span>${x.detail}</span></button>`).join("")}
         </div></div>
         <label class="f">Price per period (sats) <input id="f-price" type="number" min="1000" step="500" value="${plan.pledgeSats}"></label>
-        <label class="f">Periods to pay ahead <input id="f-n" type="number" min="1" max="60" value="1"></label>
+        <label class="f">Periods to pay ahead <input id="f-n" type="number" min="1" max="100" value="1"></label>
         <label class="f">Provider's address <span class="hint">Where each period's payment goes (demo: Sunrise Solar Co-op)</span><input id="f-prov" value="${DEFAULT_PROVIDER[net]}"></label>
       </div>
     </div>
@@ -406,7 +406,7 @@ function pageNew() {
   bindConnect();
   const sum = () => {
     const price = BigInt(Math.max(1000, Number(($("#f-price") as HTMLInputElement).value) || 0));
-    const n = BigInt(Math.max(1, Math.min(60, Number(($("#f-n") as HTMLInputElement).value) || 1)));
+    const n = BigInt(Math.max(1, Math.min(100, Number(($("#f-n") as HTMLInputElement).value) || 1)));
     const total = (price + MINER_FEE) * n + 1000n;
     const days = (plan.period * Number(n)) / BLOCKS_PER_DAY;
     $("#f-sum").innerHTML = `<div><span>Plan</span><span>${plan.name}, ${plan.detail}</span></div>
