@@ -63,16 +63,17 @@ const app = $("#app");
 function shell(active: string, body: string) {
   const pubkey = wallet.connected ? wallet.pubkey("receive", 0) : undefined;
   const address = pubkey ? addressOfPubkey(pubkey, net) : "";
-  const shortAddress = address ? `${address.slice(0, 12)}…${address.slice(-5)}` : "";
   const chip = wallet.connected
     ? `<details class="wallet-menu">
-        <summary class="wallet-chip" aria-label="Connected wallet ${esc(shortAddress)}" title="Connected wallet · ${esc(address)}">
-          ${icon("wallet")}<span class="wallet-short-address">${esc(shortAddress || wallet.name || "Wallet connected")}</span><span class="wallet-menu-caret">${icon("chev")}</span>
+        <summary class="wallet-chip" aria-label="Cashonize wallet connected" title="Cashonize wallet connected">
+          ${icon("wallet")}<span class="wallet-status-label">Cashonize connected</span><span class="wallet-menu-caret">${icon("chev")}</span>
         </summary>
         <div class="wallet-menu-panel">
           <strong>${esc(wallet.name || "Cashonize")} connected</strong>
           <span class="wallet-network-label">${net === "chipnet" ? "Chipnet · test network" : "Mainnet · real BCH"}</span>
+          <label class="wallet-address-label">Connected wallet address (first receive address)</label>
           <code class="wallet-full-address">${esc(address || "Wallet address unavailable")}</code>
+          <p class="wallet-address-help">This is one address derived from the connected wallet. KeepLit checks its receive and change addresses and uses the BCH it finds there when funding.</p>
           <button class="btn btn-ghost btn-sm" id="w-copy-address" ${address ? "" : "disabled"}>${icon("copy")} Copy address</button>
           <button class="btn btn-ghost btn-sm" id="w-header-disc">Disconnect wallet</button>
         </div>
@@ -333,8 +334,8 @@ async function runCollect(p: VaultParams, after: () => void) {
 
 function connectBlock() {
   if (wallet.connected) {
-    const pk = wallet.pubkey("receive", 0);
-    return `<div class="card"><h3>${icon("wallet")} Wallet connected</h3><p class="sub">${esc(wallet.name || "")} · payer address <span class="mono">${pk ? esc(addressOfPubkey(pk, net)) : "?"}</span></p>
+    return `<div class="card"><h3>${icon("wallet")} Wallet connected</h3><p class="sub">${esc(wallet.name || "Cashonize")} · KeepLit will use this wallet as the payer.</p>
+      <p class="wallet-address-help">The short address in the header is one address from this wallet. KeepLit checks the wallet's receive and change addresses when funding.</p>
       <div class="actions"><button class="btn btn-ghost btn-sm" id="w-disc">Disconnect</button></div></div>`;
   }
   return `<div class="card wallet-connect-card"><h3>1. Connect Cashonize <span class="optional">(optional)</span></h3>
