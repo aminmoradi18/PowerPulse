@@ -2,11 +2,7 @@
   "repo": "https://github.com/aminmoradi18/PowerPulse",
   "slides": "https://docs.google.com/presentation/d/1KyWUg76DJi5y3DSbAzUcbcRt3aS_m_Wh/edit?usp=sharing&ouid=115731750792003483147&rtpof=true&sd=true",
   "video": "https://drive.google.com/file/d/1AUgdf_Ou3j4BQfsF8XXP-hldfJZPCJeL/view?usp=sharing",
-  "preBlazeRepo": "",
-  "preBlazeDemo": "",
-  "newDuringBlaze": "",
   "demoVault": {
-    "mainnet": "https://aminmoradi18.github.io/PowerPulse/#/v/eyJuIjoibWFpbm5ldCIsImQiOiJLRS1QVU1QLTAxIiwibCI6IlNvbGFyIHB1bXAgZGVtbyIsImEiOiJiaXRjb2luY2FzaDpxemVrM2w1dXg1OHJwMHB0ZGtkenFlYWtwdGxhaG5nMHZ1N3I4bjA1MjIiLCJrIjoiMDM1NGNiMDliNWQwMDdmOGUyMzhiMWViZGVkMGQ2YTg4Mzg1YmRhMWI2YTI0OTNmY2IzNTM1OGI0ZDJjNzBkMjNmIiwicyI6IjIwMDAiLCJ0IjoxfQ",
-    "chipnet": ""
+    "mainnet": "https://aminmoradi18.github.io/PowerPulse/#/v/eyJuIjoibWFpbm5ldCIsImQiOiJLRS1QVU1QLTAxIiwibCI6IlNvbGFyIHB1bXAgZGVtbyIsImEiOiJiaXRjb2luY2FzaDpxemVrM2w1dXg1OHJwMHB0ZGtkenFlYWtwdGxhaG5nMHZ1N3I4bjA1MjIiLCJrIjoiMDM1NGNiMDliNWQwMDdmOGUyMzhiMWViZGVkMGQ2YTg4Mzg1YmRhMWI2YTI0OTNmY2IzNTM1OGI0ZDJjNzBkMjNmIiwicyI6IjIwMDAiLCJ0IjoxfQ"
   }
 }
