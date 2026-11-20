@@ -228,8 +228,6 @@ input:focus, select:focus { border-color: var(--sun); outline: none; box-shadow:
 .wallet-menu-panel { position: absolute; z-index: 40; top: calc(100% + 10px); right: 0; display: grid; gap: 10px; width: min(320px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); }
 .wallet-menu-panel > strong { font-size: 14px; }
 .wallet-network-label { color: var(--muted); font-size: 12px; }
-.wallet-address-label { margin-bottom: -6px; font-size: 12px; font-weight: 700; }
-.wallet-full-address { display: block; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
 .wallet-address-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .wallet-menu-panel .btn { justify-content: flex-start; }
 .wallet-sign-status { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid rgba(245,184,61,.38); border-radius: 12px; background: rgba(245,184,61,.09); color: #ffe2a3; font-size: 13px; line-height: 1.5; }

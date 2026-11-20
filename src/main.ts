@@ -61,8 +61,6 @@ function saveVault(code: string) { try { const v = savedVaults().filter((x) => x
 // ---------- shell ----------
 const app = $("#app");
 function shell(active: string, body: string) {
-  const pubkey = wallet.connected ? wallet.pubkey("receive", 0) : undefined;
-  const address = pubkey ? addressOfPubkey(pubkey, net) : "";
   const chip = wallet.connected
     ? `<details class="wallet-menu">
         <summary class="wallet-chip" aria-label="Cashonize wallet connected" title="Cashonize wallet connected">
@@ -71,10 +69,7 @@ function shell(active: string, body: string) {
         <div class="wallet-menu-panel">
           <strong>${esc(wallet.name || "Cashonize")} connected</strong>
           <span class="wallet-network-label">${net === "chipnet" ? "Chipnet · test network" : "Mainnet · real BCH"}</span>
-          <label class="wallet-address-label">Connected wallet address (first receive address)</label>
-          <code class="wallet-full-address">${esc(address || "Wallet address unavailable")}</code>
-          <p class="wallet-address-help">This is one address derived from the connected wallet. KeepLit checks its receive and change addresses and uses the BCH it finds there when funding.</p>
-          <button class="btn btn-ghost btn-sm" id="w-copy-address" ${address ? "" : "disabled"}>${icon("copy")} Copy address</button>
+          <p class="wallet-address-help">Wallet connected. KeepLit checks this wallet for BCH when you fund a plan. You approve each transaction in Cashonize.</p>
           <button class="btn btn-ghost btn-sm" id="w-header-disc">Disconnect wallet</button>
         </div>
       </details>`
@@ -120,8 +115,6 @@ function shell(active: string, body: string) {
   </div></footer>
   <div id="toasts" aria-live="polite"></div>`;
   app.querySelectorAll<HTMLButtonElement>(".net button").forEach((b) => (b.onclick = () => setNet(b.dataset.net as Net)));
-  const copyAddress = $("#w-copy-address", app);
-  if (copyAddress && address) copyAddress.onclick = () => copy(address);
   const disconnect = $("#w-header-disc", app);
   if (disconnect) disconnect.onclick = async () => {
     try { await wallet.disconnect(); render(); }
@@ -335,7 +328,7 @@ async function runCollect(p: VaultParams, after: () => void) {
 function connectBlock() {
   if (wallet.connected) {
     return `<div class="card"><h3>${icon("wallet")} Wallet connected</h3><p class="sub">${esc(wallet.name || "Cashonize")} · KeepLit will use this wallet as the payer.</p>
-      <p class="wallet-address-help">The short address in the header is one address from this wallet. KeepLit checks the wallet's receive and change addresses when funding.</p>
+      <p class="wallet-address-help">You review and approve any funding transaction in Cashonize before it is sent.</p>
       <div class="actions"><button class="btn btn-ghost btn-sm" id="w-disc">Disconnect</button></div></div>`;
   }
   return `<div class="card wallet-connect-card"><h3>1. Connect Cashonize <span class="optional">(optional)</span></h3>
